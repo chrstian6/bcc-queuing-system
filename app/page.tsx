@@ -23,12 +23,6 @@ export default function Home() {
 
   const handleLogin = (role: "admin" | "student", email: string) => {
     console.log(`Logged in as ${role}: ${email}`);
-    // Here you would redirect to different dashboards based on role
-    // if (role === "admin") {
-    //   router.push("/admin/dashboard");
-    // } else {
-    //   router.push("/student/dashboard");
-    // }
     alert(
       `Welcome ${role === "admin" ? "Admin" : "Student"}! You have successfully logged in.`,
     );
@@ -119,21 +113,19 @@ export default function Home() {
 
   return (
     <div
-      className={`${geistSans.variable} ${geistMono.variable} flex flex-col h-screen overflow-hidden bg-white font-sans`}
+      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white font-sans`}
     >
       {/* Header Component */}
       <Header onLoginClick={() => setIsModalOpen(true)} />
 
       {/* Hero Section */}
-      <div className="flex-shrink-0">
-        <HeroSection />
-      </div>
+      <HeroSection />
 
       {/* Features Section */}
-      <div className="flex-1 px-8 py-6 bg-white">
-        <div className="max-w-6xl mx-auto h-full flex flex-col">
+      <div className="px-8 py-12 md:py-16 bg-white">
+        <div className="max-w-6xl mx-auto">
           {/* Section Header */}
-          <div className="text-center mb-6">
+          <div className="text-center mb-10 md:mb-12">
             <h2
               className="text-xl md:text-2xl font-semibold text-gray-900 mb-2 tracking-tight"
               style={{ fontFamily: "var(--font-geist-sans)" }}
@@ -151,7 +143,7 @@ export default function Home() {
           </div>
 
           {/* Features Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 flex-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10">
             {features.map((feature, index) => (
               <div key={index} className="flex flex-col p-2">
                 <div className="mb-3 text-[#1B5A8C]">{feature.icon}</div>
