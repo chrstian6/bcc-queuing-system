@@ -1,4 +1,4 @@
-// app/get-ticket/page.tsx
+// app/public/schedule/page.tsx
 "use client";
 
 import { useState } from "react";

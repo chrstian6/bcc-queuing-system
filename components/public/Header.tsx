@@ -28,7 +28,7 @@ export default function Header({
 
   const navItems = [
     {
-      label: "Get in line",
+      label: "Get a Ticket",
       href: "/public/schedule",
       icon: (
         <svg

@@ -11,8 +11,8 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Allow public routes - anyone can access these
-  const publicRoutes = ["/", "/get-ticket", "/auth/error"];
+  // Public routes - anyone can access these
+  const publicRoutes = ["/", "/public/schedule", "/get-ticket", "/auth/error"];
 
   // Check if it's a public route or static file
   const isPublicRoute = publicRoutes.some(
@@ -57,14 +57,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images (public images)
-     */
-    "/((?!_next/static|_next/image|favicon.ico|images).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images).*)"],
 };
