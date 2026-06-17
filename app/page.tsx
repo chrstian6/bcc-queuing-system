@@ -1,65 +1,184 @@
-import Image from "next/image";
+// app/page.tsx
+"use client";
+
+import { useState } from "react";
+import { Geist, Geist_Mono } from "next/font/google";
+import HeroSection from "@/components/public/HeroSection";
+import Header from "@/components/public/Header";
+import LoginModal from "@/components/public/LoginModal";
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  weight: ["400", "500", "600", "700"],
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+});
 
 export default function Home() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleLogin = (role: "admin" | "student", email: string) => {
+    console.log(`Logged in as ${role}: ${email}`);
+    // Here you would redirect to different dashboards based on role
+    // if (role === "admin") {
+    //   router.push("/admin/dashboard");
+    // } else {
+    //   router.push("/student/dashboard");
+    // }
+    alert(
+      `Welcome ${role === "admin" ? "Admin" : "Student"}! You have successfully logged in.`,
+    );
+  };
+
+  const features = [
+    {
+      title: "Real-Time Queue Tracking",
+      description:
+        "Monitor queue status and wait times instantly. See exactly where you are in line with live updates.",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
+      ),
+    },
+    {
+      title: "Digital Ticket System",
+      description:
+        "Generate and manage digital queue tickets. Join queues through web or mobile without paper.",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M15 5v2m0 4v2m0 4v2M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"
+          />
+        </svg>
+      ),
+    },
+    {
+      title: "SMS Notifications",
+      description:
+        "Get automatic text messages when your turn approaches. Never miss your queue position.",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+          />
+        </svg>
+      ),
+    },
+    {
+      title: "Service Analytics",
+      description:
+        "Access data on queue performance and service efficiency. Make informed decisions to improve operations.",
+      icon: (
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+          />
+        </svg>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div
+      className={`${geistSans.variable} ${geistMono.variable} flex flex-col h-screen overflow-hidden bg-white font-sans`}
+    >
+      {/* Header Component */}
+      <Header onLoginClick={() => setIsModalOpen(true)} />
+
+      {/* Hero Section */}
+      <div className="flex-shrink-0">
+        <HeroSection />
+      </div>
+
+      {/* Features Section */}
+      <div className="flex-1 px-8 py-6 bg-white">
+        <div className="max-w-6xl mx-auto h-full flex flex-col">
+          {/* Section Header */}
+          <div className="text-center mb-6">
+            <h2
+              className="text-xl md:text-2xl font-semibold text-gray-900 mb-2 tracking-tight"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              No more standing in long lines.
+            </h2>
+            <p
+              className="text-gray-500 text-sm max-w-2xl mx-auto leading-relaxed px-4"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              BCC's smart queue system lets students, faculty, and staff join
+              lines digitally, track wait times in real time, and get notified
+              when it's their turn — all from their phone.
+            </p>
+          </div>
+
+          {/* Features Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 flex-1">
+            {features.map((feature, index) => (
+              <div key={index} className="flex flex-col p-2">
+                <div className="mb-3 text-[#1B5A8C]">{feature.icon}</div>
+                <h3
+                  className="text-base font-semibold text-gray-900 mb-1.5 tracking-tight"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  {feature.title}
+                </h3>
+                <p
+                  className="text-xs text-gray-500 leading-relaxed"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  {feature.description}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
+
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onLogin={handleLogin}
+      />
     </div>
   );
 }
