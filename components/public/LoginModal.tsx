@@ -3,8 +3,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { loginAction } from "@/actions/auth";
 
 type UserRole = "admin" | "student";
@@ -27,8 +25,6 @@ export default function LoginModal({
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const { update } = useSession();
 
   useEffect(() => {
     if (isOpen) {
@@ -59,19 +55,14 @@ export default function LoginModal({
         return;
       }
 
-      console.log("Login successful:", { role, email });
       onLogin?.(role, email);
 
-      // Update session
-      await update();
-
-      // Use window.location.href for hard redirect (works on Vercel)
-      if (result.redirectTo) {
-        window.location.href = result.redirectTo;
-      } else {
+      // Small delay to let session cookie set, then hard redirect
+      setTimeout(() => {
         window.location.href =
-          role === "admin" ? "/admin/dashboard" : "/student/dashboard";
-      }
+          result.redirectTo ||
+          (role === "admin" ? "/admin/dashboard" : "/student/dashboard");
+      }, 500);
 
       onClose();
     } catch (error: any) {
@@ -87,7 +78,6 @@ export default function LoginModal({
     }
   };
 
-  // Get dynamic placeholder and label based on role
   const getEmailPlaceholder = () => {
     if (role === "admin") return "admin@bcc.edu.ph";
     return "student@bcc.edu.ph";
@@ -317,7 +307,7 @@ export default function LoginModal({
                       </p>
                     </div>
 
-                    {/* Contact Admin Message - Only show for admin/faculty */}
+                    {/* Contact Admin Message */}
                     {role === "admin" && (
                       <div className="mt-2 pt-2 border-t border-gray-200">
                         <p className="text-center text-sm text-gray-600 font-['Plus_Jakarta_Sans']">
@@ -345,10 +335,8 @@ export default function LoginModal({
                     className="object-cover"
                     priority
                   />
-                  {/* Blue Gradient Overlay - BCC Colors */}
                   <div className="absolute inset-0 bg-gradient-to-br from-[#0B3B5F]/80 via-[#1B5A8C]/70 to-[#2E7EB8]/60"></div>
 
-                  {/* Dynamic overlay text based on role */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-white text-center">
                     <div className="mb-4 w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
                       {role === "admin" ? (

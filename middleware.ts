@@ -1,80 +1,42 @@
 // middleware.ts
+import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+export default auth((req) => {
+  const { pathname } = req.nextUrl;
+  const isAuth = !!req.auth;
+  const userRole = req.auth?.user?.role;
 
-  // Public routes - anyone can access these
+  // Public routes
   const publicRoutes = ["/", "/public/schedule", "/get-ticket", "/auth/error"];
-
-  // Check if it's a public route or static file
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + "/"),
   );
-  const isApiRoute = pathname.startsWith("/api/auth");
-  const isStaticFile =
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/images") ||
-    pathname.startsWith("/fonts") ||
-    pathname === "/favicon.ico";
 
-  if (isPublicRoute || isApiRoute || isStaticFile) {
+  if (isPublicRoute || pathname.startsWith("/api/auth")) {
     return NextResponse.next();
   }
 
-  try {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET,
-    });
-
-    // For protected routes, check authentication
-    if (!token) {
-      const loginUrl = new URL("/", request.url);
-      loginUrl.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(loginUrl);
-    }
-
-    // Admin routes protection
-    if (pathname.startsWith("/admin")) {
-      if (token.role !== "1") {
-        const homeUrl = new URL("/", request.url);
-        homeUrl.searchParams.set("error", "forbidden");
-        return NextResponse.redirect(homeUrl);
-      }
-    }
-
-    // Student routes protection
-    if (pathname.startsWith("/student")) {
-      if (token.role !== "2") {
-        const homeUrl = new URL("/", request.url);
-        homeUrl.searchParams.set("error", "forbidden");
-        return NextResponse.redirect(homeUrl);
-      }
-    }
-
-    return NextResponse.next();
-  } catch (error) {
-    console.error("Middleware error:", error);
-    // If token verification fails, redirect to login
-    const loginUrl = new URL("/", request.url);
+  // Protected routes
+  if (!isAuth) {
+    const loginUrl = new URL("/", req.url);
     loginUrl.searchParams.set("error", "unauthorized");
     return NextResponse.redirect(loginUrl);
   }
-}
+
+  // Admin protection
+  if (pathname.startsWith("/admin") && userRole !== "1") {
+    return NextResponse.redirect(new URL("/?error=forbidden", req.url));
+  }
+
+  // Student protection
+  if (pathname.startsWith("/student") && userRole !== "2") {
+    return NextResponse.redirect(new URL("/?error=forbidden", req.url));
+  }
+
+  return NextResponse.next();
+});
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images (public images)
-     * - fonts (font files)
-     */
-    "/((?!_next/static|_next/image|favicon.ico|images|fonts).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images|fonts).*)"],
 };
