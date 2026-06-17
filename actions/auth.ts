@@ -1,4 +1,4 @@
-// actions/auth.ts
+// app/actions/auth.ts
 "use server";
 
 import { signIn, signOut, auth } from "@/lib/auth";
@@ -27,6 +27,13 @@ export async function loginAction(
       return { success: false, error: "Please enter a valid email address" };
     }
 
+    if (password.length < 3) {
+      return {
+        success: false,
+        error: "Password must be at least 3 characters",
+      };
+    }
+
     // Convert role string to number for the credentials
     const roleNumber = role === "admin" ? UserRole.ADMIN : UserRole.STUDENT;
 
@@ -44,6 +51,7 @@ export async function loginAction(
         "Invalid credentials for this role": `Invalid ${role} credentials. Please check your email and password.`,
         "Please provide all required fields":
           "Please fill in all required fields.",
+        "Invalid role specified": "Invalid role specified. Please try again.",
       };
 
       return {
@@ -53,6 +61,8 @@ export async function loginAction(
     }
 
     revalidatePath("/");
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/student/dashboard");
 
     return {
       success: true,
@@ -80,6 +90,8 @@ export async function logoutAction(): Promise<AuthResponse> {
   try {
     await signOut({ redirect: false });
     revalidatePath("/");
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/student/dashboard");
     return { success: true, message: "Logged out successfully" };
   } catch (error: any) {
     console.error("Logout error:", error);
@@ -118,6 +130,7 @@ export async function registerAction(
     const existingUser = await User.findOne({
       email: email.toLowerCase().trim(),
     });
+
     if (existingUser) {
       return {
         success: false,
@@ -135,6 +148,7 @@ export async function registerAction(
 
     await user.save();
 
+    // Auto login after registration
     const loginResult = await loginAction(email, password, role);
 
     if (!loginResult.success) {
@@ -180,6 +194,11 @@ export async function registerAction(
 export async function getSession() {
   try {
     const session = await auth();
+
+    if (!session) {
+      return { success: false, error: "No session found", session: null };
+    }
+
     return { success: true, session };
   } catch (error: any) {
     console.error("Get session error:", error);
@@ -199,7 +218,15 @@ export async function checkAuth(requiredRole?: "admin" | "student") {
       };
     }
 
-    if (requiredRole && session.user?.role !== requiredRole) {
+    // Convert role check to match numeric roles stored in token
+    const requiredRoleNumber =
+      requiredRole === "admin"
+        ? "1"
+        : requiredRole === "student"
+          ? "2"
+          : undefined;
+
+    if (requiredRoleNumber && session.user?.role !== requiredRoleNumber) {
       return {
         isAuthenticated: true,
         isAuthorized: false,

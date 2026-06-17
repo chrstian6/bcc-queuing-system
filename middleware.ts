@@ -4,11 +4,6 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
-
   const { pathname } = request.nextUrl;
 
   // Public routes - anyone can access these
@@ -22,40 +17,64 @@ export async function middleware(request: NextRequest) {
   const isStaticFile =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/images") ||
+    pathname.startsWith("/fonts") ||
     pathname === "/favicon.ico";
 
   if (isPublicRoute || isApiRoute || isStaticFile) {
     return NextResponse.next();
   }
 
-  // For protected routes, check authentication
-  if (!token) {
+  try {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+
+    // For protected routes, check authentication
+    if (!token) {
+      const loginUrl = new URL("/", request.url);
+      loginUrl.searchParams.set("error", "unauthorized");
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // Admin routes protection
+    if (pathname.startsWith("/admin")) {
+      if (token.role !== "1") {
+        const homeUrl = new URL("/", request.url);
+        homeUrl.searchParams.set("error", "forbidden");
+        return NextResponse.redirect(homeUrl);
+      }
+    }
+
+    // Student routes protection
+    if (pathname.startsWith("/student")) {
+      if (token.role !== "2") {
+        const homeUrl = new URL("/", request.url);
+        homeUrl.searchParams.set("error", "forbidden");
+        return NextResponse.redirect(homeUrl);
+      }
+    }
+
+    return NextResponse.next();
+  } catch (error) {
+    console.error("Middleware error:", error);
+    // If token verification fails, redirect to login
     const loginUrl = new URL("/", request.url);
     loginUrl.searchParams.set("error", "unauthorized");
     return NextResponse.redirect(loginUrl);
   }
-
-  // Admin routes protection
-  if (pathname.startsWith("/admin")) {
-    if (token.role !== "1") {
-      const homeUrl = new URL("/", request.url);
-      homeUrl.searchParams.set("error", "forbidden");
-      return NextResponse.redirect(homeUrl);
-    }
-  }
-
-  // Student routes protection
-  if (pathname.startsWith("/student")) {
-    if (token.role !== "2") {
-      const homeUrl = new URL("/", request.url);
-      homeUrl.searchParams.set("error", "forbidden");
-      return NextResponse.redirect(homeUrl);
-    }
-  }
-
-  return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|images).*)"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - images (public images)
+     * - fonts (font files)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|images|fonts).*)",
+  ],
 };
