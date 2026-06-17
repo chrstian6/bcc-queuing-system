@@ -1,4 +1,5 @@
 // app/admin/dashboard/page.tsx
+export const dynamic = "force-dynamic";
 import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
 import {
