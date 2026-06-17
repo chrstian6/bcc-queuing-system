@@ -11,13 +11,24 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Allow public routes and API routes
-  const publicRoutes = ["/", "/auth/error"];
-  if (publicRoutes.includes(pathname) || pathname.startsWith("/api/auth")) {
+  // Allow public routes - anyone can access these
+  const publicRoutes = ["/", "/get-ticket", "/auth/error"];
+
+  // Check if it's a public route or static file
+  const isPublicRoute = publicRoutes.some(
+    (route) => pathname === route || pathname.startsWith(route + "/"),
+  );
+  const isApiRoute = pathname.startsWith("/api/auth");
+  const isStaticFile =
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/images") ||
+    pathname === "/favicon.ico";
+
+  if (isPublicRoute || isApiRoute || isStaticFile) {
     return NextResponse.next();
   }
 
-  // Check if user is authenticated
+  // For protected routes, check authentication
   if (!token) {
     const loginUrl = new URL("/", request.url);
     loginUrl.searchParams.set("error", "unauthorized");
@@ -27,14 +38,18 @@ export async function middleware(request: NextRequest) {
   // Admin routes protection
   if (pathname.startsWith("/admin")) {
     if (token.role !== "1") {
-      return NextResponse.redirect(new URL("/", request.url));
+      const homeUrl = new URL("/", request.url);
+      homeUrl.searchParams.set("error", "forbidden");
+      return NextResponse.redirect(homeUrl);
     }
   }
 
   // Student routes protection
   if (pathname.startsWith("/student")) {
     if (token.role !== "2") {
-      return NextResponse.redirect(new URL("/", request.url));
+      const homeUrl = new URL("/", request.url);
+      homeUrl.searchParams.set("error", "forbidden");
+      return NextResponse.redirect(homeUrl);
     }
   }
 

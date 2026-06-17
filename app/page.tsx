@@ -1,8 +1,9 @@
 // app/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { useSearchParams, useRouter } from "next/navigation";
 import HeroSection from "@/components/public/HeroSection";
 import Header from "@/components/public/Header";
 import LoginModal from "@/components/public/LoginModal";
@@ -18,14 +19,28 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
-export default function Home() {
+function HomeContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Open login modal if redirected from protected route
+  useEffect(() => {
+    const error = searchParams.get("error");
+    if (error === "unauthorized" || error === "forbidden") {
+      setIsModalOpen(true);
+      // Clean URL without reloading
+      router.replace("/");
+    }
+  }, [searchParams, router]);
 
   const handleLogin = (role: "admin" | "student", email: string) => {
     console.log(`Logged in as ${role}: ${email}`);
-    alert(
-      `Welcome ${role === "admin" ? "Admin" : "Student"}! You have successfully logged in.`,
-    );
+    if (role === "admin") {
+      router.push("/admin/dashboard");
+    } else {
+      router.push("/student/dashboard");
+    }
   };
 
   const features = [
@@ -172,5 +187,13 @@ export default function Home() {
         onLogin={handleLogin}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+      <HomeContent />
+    </Suspense>
   );
 }
