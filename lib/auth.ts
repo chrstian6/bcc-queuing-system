@@ -3,6 +3,7 @@ import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import connectDB from "./mongodb";
 import User, { UserRole } from "@/models/User";
+import { authConfig } from "./auth.config";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -12,6 +13,7 @@ export const {
   signOut,
   handlers: { GET, POST },
 } = NextAuth({
+  ...authConfig,
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -39,36 +41,27 @@ export const {
         ) {
           throw new Error("Please provide all required fields");
         }
-
         const roleNumber = parseInt(credentials.role as string);
-
         if (roleNumber !== UserRole.ADMIN && roleNumber !== UserRole.STUDENT) {
           throw new Error("Invalid role specified");
         }
-
         try {
           await connectDB();
-
           const user = await User.findOne({
             email: (credentials.email as string).toLowerCase().trim(),
           }).select("+password");
-
           if (!user) {
             throw new Error("Invalid email or password");
           }
-
           if (user.role !== roleNumber) {
             throw new Error(`Invalid credentials for this role`);
           }
-
           const isPasswordValid = await user.comparePassword(
             credentials.password as string,
           );
-
           if (!isPasswordValid) {
             throw new Error("Invalid email or password");
           }
-
           return {
             id: user._id.toString(),
             email: user.email,
@@ -82,34 +75,5 @@ export const {
       },
     }),
   ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = user.role;
-        token.id = user.id;
-        token.name = user.name;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.role = token.role as string;
-        session.user.id = token.id as string;
-        session.user.name = token.name as string;
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/",
-    error: "/auth/error",
-  },
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60,
-    updateAge: 24 * 60 * 60,
-  },
-  secret: process.env.NEXTAUTH_SECRET,
   debug: process.env.NODE_ENV === "development",
-  trustHost: true,
 });
