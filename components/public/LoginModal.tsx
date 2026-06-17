@@ -62,16 +62,21 @@ export default function LoginModal({
       console.log("Login successful:", { role, email });
       onLogin?.(role, email);
 
-      // Update session and redirect
+      // Update session
       await update();
-      router.push(result.redirectTo || "/");
-      router.refresh();
+
+      // Use window.location.href for hard redirect (works on Vercel)
+      if (result.redirectTo) {
+        window.location.href = result.redirectTo;
+      } else {
+        window.location.href =
+          role === "admin" ? "/admin/dashboard" : "/student/dashboard";
+      }
 
       onClose();
     } catch (error: any) {
       setError("An unexpected error occurred. Please try again.");
       console.error("Login error:", error);
-    } finally {
       setIsLoading(false);
     }
   };
