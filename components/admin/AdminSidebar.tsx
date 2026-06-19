@@ -29,6 +29,13 @@ import {
   FileText,
   ScrollText,
   GraduationCap,
+  UserPlus,
+  Shield,
+  Activity,
+  Monitor,
+  UserCog,
+  ListChecks,
+  Receipt,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
 import { useRouter } from "next/navigation";
@@ -54,6 +61,7 @@ const menuItems = [
     items: [
       { title: "Active Queue", href: "/admin/queue/active", icon: Users },
       { title: "Serve Ticket", href: "/admin/queue/serve", icon: Ticket },
+      { title: "All Tickets", href: "/admin/queue/all", icon: ListChecks },
     ],
   },
   {
@@ -68,10 +76,39 @@ const menuItems = [
       },
       { title: "TOR", href: "/admin/tickets/tor", icon: GraduationCap },
       { title: "Grades", href: "/admin/tickets/grades", icon: BarChart3 },
+      { title: "Assessment", href: "/admin/tickets/assessment", icon: Receipt },
+    ],
+  },
+  {
+    title: "User Management",
+    icon: UserCog,
+    href: "/admin/users",
+    items: [
+      { title: "All Users", href: "/admin/users", icon: Users },
+      { title: "Create Account", href: "/admin/users/create", icon: UserPlus },
+      { title: "Staff Accounts", href: "/admin/users/staff", icon: Shield },
       {
-        title: "Assessment",
-        href: "/admin/tickets/assessment",
-        icon: FileText,
+        title: "Student Accounts",
+        href: "/admin/users/students",
+        icon: GraduationCap,
+      },
+    ],
+  },
+  {
+    title: "System Monitor",
+    icon: Monitor,
+    href: "/admin/monitor",
+    items: [
+      { title: "System Logs", href: "/admin/monitor/logs", icon: Activity },
+      {
+        title: "Queue Analytics",
+        href: "/admin/monitor/analytics",
+        icon: BarChart3,
+      },
+      {
+        title: "Performance",
+        href: "/admin/monitor/performance",
+        icon: Monitor,
       },
     ],
   },
@@ -98,8 +135,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     const result = await logoutAction();
     if (result.success) {
       await update();
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     }
   };
 
