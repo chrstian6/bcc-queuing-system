@@ -1,12 +1,12 @@
 // app/public/schedule/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Geist, Geist_Mono } from "next/font/google";
 import Header from "@/components/public/Header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -28,10 +28,23 @@ import {
   AlertCircle,
   Mail,
   Phone,
-  ChevronRight,
+  BookOpen,
+  FileCheck,
+  ClipboardList,
+  GraduationCap,
 } from "lucide-react";
+import { createTicket } from "@/actions/ticket"; // Fixed import path
 
-type TransactionType = "certificate" | "tor" | "grades" | "assessment";
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  weight: ["400", "500", "600", "700"],
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+});
 
 interface StudentInfo {
   schoolId: string;
@@ -56,33 +69,57 @@ interface GuardianInfo {
 
 const TRANSACTION_TYPES = [
   {
-    id: "certificate" as TransactionType,
-    label: "Certificate of Enrollment",
-    description: "Proof of current enrollment status",
-    icon: FileText,
+    id: "tor",
+    label: "Request for TOR",
+    description: "Transcript of Records - official academic record",
+    icon: ScrollText,
+    requirements: "Valid School ID, Clearance",
+    time: "3-5 days",
+  },
+  {
+    id: "coe",
+    label: "Request for COE",
+    description: "Certificate of Enrollment - proof of enrollment",
+    icon: FileCheck,
     requirements: "Valid School ID",
     time: "1-3 days",
   },
   {
-    id: "tor" as TransactionType,
-    label: "Transcript of Records",
-    description: "Complete academic performance record",
-    icon: ScrollText,
-    requirements: "School ID, Clearance",
-    time: "3-5 days",
-  },
-  {
-    id: "grades" as TransactionType,
+    id: "request-grades",
     label: "Request for Grades",
-    description: "Official grade report per semester",
+    description: "Official grade report per semester or term",
     icon: BarChart3,
     requirements: "Valid School ID",
     time: "1-2 days",
   },
   {
-    id: "assessment" as TransactionType,
-    label: "Request for Assessment",
-    description: "Breakdown of fees and charges",
+    id: "enrollment-fees",
+    label: "Enrollment Fees",
+    description: "Payment for enrollment and registration fees",
+    icon: GraduationCap,
+    requirements: "Valid School ID",
+    time: "Same day",
+  },
+  {
+    id: "assessment",
+    label: "Request Assessment",
+    description: "Request breakdown of fees, charges, and balances",
+    icon: ClipboardList,
+    requirements: "Valid School ID",
+    time: "Same day",
+  },
+  {
+    id: "exam-fees",
+    label: "Exam Fees",
+    description: "Payment for examination-related fees and permits",
+    icon: FileText,
+    requirements: "Valid School ID",
+    time: "Same day",
+  },
+  {
+    id: "payments",
+    label: "Payments",
+    description: "General payments for tuition, miscellaneous, and other fees",
     icon: Receipt,
     requirements: "Valid School ID",
     time: "Same day",
@@ -107,11 +144,20 @@ const SUFFIXES = ["", "Jr.", "Sr.", "II", "III", "IV", "V"];
 
 export default function GetTicketPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const transactionType = searchParams.get("type");
+
   const [step, setStep] = useState(1);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<TransactionType | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<string | null>(
+    null,
+  );
   const [isGuardian, setIsGuardian] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ticketData, setTicketData] = useState<{
+    ticketNumber: string;
+    ticketId: string;
+  } | null>(null);
+  const [submitError, setSubmitError] = useState<string>("");
 
   const [studentInfo, setStudentInfo] = useState<StudentInfo>({
     schoolId: "",
@@ -136,13 +182,29 @@ export default function GetTicketPage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const validateStep1 = () => {
-    const newErrors: Record<string, string> = {};
-    if (!selectedTransaction) {
-      newErrors.transaction = "Please select a document or service";
+  // Set the transaction type from URL parameter and skip step 1
+  useEffect(() => {
+    if (transactionType) {
+      setSelectedTransaction(transactionType);
+      setStep(2);
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  }, [transactionType]);
+
+  const handleSchoolIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, "");
+    if (value.length <= 6) {
+      setStudentInfo((prev) => ({
+        ...prev,
+        schoolId: value,
+      }));
+      if (errors.schoolId) {
+        setErrors((prev) => {
+          const n = { ...prev };
+          delete n.schoolId;
+          return n;
+        });
+      }
+    }
   };
 
   const validateStep2 = () => {
@@ -151,9 +213,8 @@ export default function GetTicketPage() {
     if (!studentInfo.schoolId.trim()) {
       newErrors.schoolId =
         "Please enter your school ID so we can pull up your records";
-    } else if (!/^\d{2}-\d{4}-\d{3}$/.test(studentInfo.schoolId)) {
-      newErrors.schoolId =
-        "That doesn't look right. Use the format: XX-XXXX-XXX";
+    } else if (!/^\d{6}$/.test(studentInfo.schoolId)) {
+      newErrors.schoolId = "Please enter a valid 6-digit school ID number";
     }
 
     if (!studentInfo.firstName.trim())
@@ -225,22 +286,71 @@ export default function GetTicketPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError("");
+
     if (!validateStep2()) return;
 
     setIsSubmitting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setStep(3);
+      const ticketPayload = {
+        transactionType: selectedTransaction!,
+        student: {
+          schoolId: studentInfo.schoolId,
+          firstName: studentInfo.firstName,
+          lastName: studentInfo.lastName,
+          middleName: studentInfo.middleName || undefined,
+          suffix: studentInfo.suffix || undefined,
+          year: studentInfo.year,
+          section: studentInfo.section,
+        },
+        requesterType: isGuardian
+          ? ("guardian" as const)
+          : ("student" as const),
+        requesterEmail: isGuardian
+          ? guardianInfo.email || undefined
+          : studentInfo.email || undefined,
+        requesterContactNumber: isGuardian
+          ? guardianInfo.contactNumber || undefined
+          : studentInfo.contactNumber || undefined,
+        guardian: isGuardian
+          ? {
+              firstName: guardianInfo.guardianFirstName,
+              lastName: guardianInfo.guardianLastName,
+              middleName: guardianInfo.guardianMiddleName || undefined,
+              relationship: guardianInfo.relationship,
+            }
+          : undefined,
+      };
+
+      console.log("Submitting ticket:", ticketPayload);
+
+      const result = await createTicket(ticketPayload);
+
+      console.log("Server response:", result);
+
+      if (result.success && result.ticket) {
+        setTicketData({
+          ticketNumber: result.ticket.ticketNumber,
+          ticketId: result.ticket.ticketId,
+        });
+        setStep(3);
+      } else {
+        setSubmitError(
+          result.error || "Failed to create ticket. Please try again.",
+        );
+      }
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error creating ticket:", error);
+      setSubmitError("An unexpected error occurred. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleReset = () => {
-    setStep(1);
-    setSelectedTransaction(null);
+    setStep(2);
+    setTicketData(null);
+    setSubmitError("");
     setStudentInfo({
       schoolId: "",
       firstName: "",
@@ -267,71 +377,113 @@ export default function GetTicketPage() {
     (t) => t.id === selectedTransaction,
   );
 
+  if (!transactionType) {
+    return (
+      <div
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white flex items-center justify-center`}
+        style={{ fontFamily: "var(--font-geist-sans)" }}
+      >
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p
+            className="text-gray-500 mb-4"
+            style={{ fontFamily: "var(--font-geist-sans)" }}
+          >
+            No transaction type selected
+          </p>
+          <Link
+            href="/"
+            className="text-[#1B5A8C] hover:text-[#0B3B5F] font-medium"
+            style={{ fontFamily: "var(--font-geist-sans)" }}
+          >
+            Go back to select a transaction
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="min-h-screen bg-white"
+      className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white`}
       style={{ fontFamily: "var(--font-geist-sans)" }}
     >
       <Header onLoginClick={() => console.log("Login clicked")} />
 
       <div className="pt-24 pb-16">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Back Button */}
           <button
             onClick={() => router.back()}
             className="mb-6 text-sm text-[#1B5A8C] hover:text-[#0B3B5F] transition-colors flex items-center gap-1 font-medium"
+            style={{ fontFamily: "var(--font-geist-sans)" }}
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
 
-          {/* Header */}
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-[#1B5A8C] tracking-tight mb-2">
-              Get a Ticket
+            <h1
+              className="text-2xl font-bold text-[#1B5A8C] tracking-tight mb-2"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              Fill Out Your Details
             </h1>
-            <p className="text-sm text-gray-500">
-              Request documents and services at Binalbagan Catholic College
+            <p
+              className="text-sm text-gray-500"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              Complete the form below to get your ticket
             </p>
           </div>
 
-          {/* Instructions */}
           <div className="mb-8 bg-[#1B5A8C]/5 border border-[#1B5A8C]/10 rounded-lg p-4">
-            <h2 className="text-sm font-semibold text-[#1B5A8C] mb-3">
+            <h2
+              className="text-sm font-semibold text-[#1B5A8C] mb-3"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
               Here's how to get your ticket:
             </h2>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="flex gap-2">
-                <span className="flex-shrink-0 w-5 h-5 bg-[#1B5A8C] text-white rounded-full flex items-center justify-center text-xs font-bold">
+                <span
+                  className="flex-shrink-0 w-5 h-5 bg-[#1B5A8C] text-white rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
                   1
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Pick a document
+                  <p
+                    className="text-sm font-medium text-gray-900"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
+                    Tell us about you
                   </p>
-                  <p className="text-xs text-gray-500">Choose what you need</p>
+                  <p
+                    className="text-xs text-gray-500"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
+                    Fill in your details
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <span className="flex-shrink-0 w-5 h-5 bg-gray-200 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">
+                <span
+                  className="flex-shrink-0 w-5 h-5 bg-gray-200 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
                   2
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Tell us about you
-                  </p>
-                  <p className="text-xs text-gray-500">Fill in your details</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <span className="flex-shrink-0 w-5 h-5 bg-gray-200 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">
-                  3
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
+                  <p
+                    className="text-sm font-medium text-gray-900"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
                     Get your number
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p
+                    className="text-xs text-gray-500"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
                     We'll give you a ticket
                   </p>
                 </div>
@@ -340,16 +492,26 @@ export default function GetTicketPage() {
           </div>
 
           {step === 3 ? (
-            // Ticket Confirmation
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-[#1B5A8C]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8 text-[#1B5A8C]" />
               </div>
-              <h2 className="text-xl font-bold text-[#1B5A8C] mb-1">
+              <h2
+                className="text-xl font-bold text-[#1B5A8C] mb-1"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+              >
                 Your ticket is ready!
               </h2>
-              <p className="text-sm text-gray-600 mb-1">{selectedDoc?.label}</p>
-              <p className="text-xs text-gray-500 mb-6">
+              <p
+                className="text-sm text-gray-600 mb-1"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+              >
+                {selectedDoc?.label}
+              </p>
+              <p
+                className="text-xs text-gray-500 mb-6"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+              >
                 We'll send updates to{" "}
                 {isGuardian
                   ? guardianInfo.email || guardianInfo.contactNumber
@@ -359,31 +521,44 @@ export default function GetTicketPage() {
               <div className="inline-block mb-8">
                 <div className="bg-white border-2 border-[#1B5A8C]/20 rounded-xl overflow-hidden">
                   <div className="bg-[#1B5A8C] px-8 py-2.5">
-                    <p className="text-white/80 text-xs font-medium">
+                    <p
+                      className="text-white/80 text-xs font-medium"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
+                    >
                       YOUR TICKET NUMBER
                     </p>
                   </div>
                   <div className="px-10 py-5">
-                    <p className="text-4xl font-bold text-[#1B5A8C] tracking-widest">
-                      {String(Math.floor(Math.random() * 999) + 1).padStart(
-                        3,
-                        "0",
-                      )}
+                    <p
+                      className="text-4xl font-bold text-[#1B5A8C] tracking-widest"
+                      style={{ fontFamily: "var(--font-geist-mono)" }}
+                    >
+                      {ticketData?.ticketNumber || "---"}
                     </p>
                   </div>
                 </div>
+                {ticketData?.ticketId && (
+                  <p
+                    className="text-xs text-gray-400 mt-2"
+                    style={{ fontFamily: "var(--font-geist-mono)" }}
+                  >
+                    {ticketData.ticketId}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3 justify-center">
                 <Link
                   href="/"
                   className="inline-flex items-center justify-center px-6 py-2.5 bg-[#1B5A8C] text-white text-sm font-medium rounded-lg hover:bg-[#0B3B5F] transition-colors"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
                 >
                   Done
                 </Link>
                 <button
                   onClick={handleReset}
                   className="inline-flex items-center justify-center px-6 py-2.5 border border-[#1B5A8C]/20 text-[#1B5A8C] text-sm font-medium rounded-lg hover:bg-[#1B5A8C]/5 transition-colors"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
                 >
                   Get Another Ticket
                 </button>
@@ -391,82 +566,6 @@ export default function GetTicketPage() {
             </div>
           ) : (
             <>
-              {/* Step 1: Select Document */}
-              {step === 1 && (
-                <div>
-                  <div className="space-y-2">
-                    {TRANSACTION_TYPES.map((type) => (
-                      <button
-                        key={type.id}
-                        onClick={() => {
-                          setSelectedTransaction(type.id);
-                          setErrors({});
-                        }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
-                          selectedTransaction === type.id
-                            ? "border-[#1B5A8C] bg-[#1B5A8C]/5"
-                            : "border-gray-200 hover:border-[#1B5A8C]/30 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div
-                          className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
-                            selectedTransaction === type.id
-                              ? "bg-[#1B5A8C] text-white"
-                              : "bg-gray-100 text-gray-500"
-                          }`}
-                        >
-                          <type.icon className="w-5 h-5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3
-                              className={`text-sm font-medium ${selectedTransaction === type.id ? "text-[#1B5A8C]" : "text-gray-900"}`}
-                            >
-                              {type.label}
-                            </h3>
-                            <Badge variant="secondary" className="text-xs">
-                              {type.time}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {type.description}
-                          </p>
-                        </div>
-                        <div
-                          className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                            selectedTransaction === type.id
-                              ? "border-[#1B5A8C] bg-[#1B5A8C]"
-                              : "border-gray-300"
-                          }`}
-                        >
-                          {selectedTransaction === type.id && (
-                            <CheckCircle2 className="w-3 h-3 text-white" />
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  {errors.transaction && (
-                    <div className="mt-3 flex items-center gap-2 text-sm text-red-600">
-                      <AlertCircle className="w-4 h-4" />
-                      {errors.transaction}
-                    </div>
-                  )}
-                  <div className="mt-6 flex justify-end">
-                    <button
-                      onClick={() => {
-                        if (validateStep1()) setStep(2);
-                      }}
-                      className="inline-flex items-center px-6 py-2.5 bg-[#1B5A8C] text-white text-sm font-medium rounded-lg hover:bg-[#0B3B5F] transition-colors"
-                    >
-                      Continue
-                      <ChevronRight className="w-4 h-4 ml-1.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 2: Student Details */}
               {step === 2 && (
                 <form onSubmit={handleSubmit}>
                   {selectedDoc && (
@@ -474,57 +573,87 @@ export default function GetTicketPage() {
                       <div className="w-8 h-8 bg-[#1B5A8C] rounded-lg flex items-center justify-center">
                         <selectedDoc.icon className="w-4 h-4 text-white" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-[#1B5A8C]">
+                      <div className="flex-1">
+                        <p
+                          className="text-sm font-medium text-[#1B5A8C]"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           {selectedDoc.label}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p
+                          className="text-xs text-gray-500"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Requirements: {selectedDoc.requirements}
                         </p>
                       </div>
+                      <Badge
+                        variant="secondary"
+                        className="text-xs"
+                        style={{ fontFamily: "var(--font-geist-sans)" }}
+                      >
+                        {selectedDoc.time}
+                      </Badge>
+                    </div>
+                  )}
+
+                  {submitError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                      <p
+                        className="text-sm text-red-600"
+                        style={{ fontFamily: "var(--font-geist-sans)" }}
+                      >
+                        {submitError}
+                      </p>
                     </div>
                   )}
 
                   <div className="space-y-4">
                     {/* School ID */}
                     <div>
-                      <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                      <label
+                        className="text-sm font-medium text-gray-700 mb-1.5 block"
+                        style={{ fontFamily: "var(--font-geist-sans)" }}
+                      >
                         What's your school ID?{" "}
                         <span className="text-red-500">*</span>
                       </label>
                       <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={studentInfo.schoolId}
-                        onChange={(e) => {
-                          setStudentInfo((prev) => ({
-                            ...prev,
-                            schoolId: e.target.value,
-                          }));
-                          if (errors.schoolId)
-                            setErrors((prev) => {
-                              const n = { ...prev };
-                              delete n.schoolId;
-                              return n;
-                            });
-                        }}
-                        placeholder="XX-XXXX-XXX"
-                        maxLength={12}
+                        onChange={handleSchoolIdChange}
+                        placeholder="Enter 6-digit school ID"
+                        maxLength={6}
                         className="focus-visible:ring-[#1B5A8C]"
+                        style={{ fontFamily: "var(--font-geist-sans)" }}
                       />
                       {errors.schoolId && (
-                        <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                        <p
+                          className="text-xs text-red-600 mt-1 flex items-center gap-1"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           <AlertCircle className="w-3 h-3" />
                           {errors.schoolId}
                         </p>
                       )}
-                      <p className="text-xs text-gray-400 mt-1">
-                        Format: YY-YYYY-NNN
+                      <p
+                        className="text-xs text-gray-400 mt-1"
+                        style={{ fontFamily: "var(--font-geist-sans)" }}
+                      >
+                        Enter your 6-digit school ID number
                       </p>
                     </div>
 
                     {/* Name Fields */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           First name <span className="text-red-500">*</span>
                         </label>
                         <Input
@@ -543,15 +672,22 @@ export default function GetTicketPage() {
                           }}
                           placeholder="Enter first name"
                           className="focus-visible:ring-[#1B5A8C]"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
                         />
                         {errors.firstName && (
-                          <p className="text-xs text-red-600 mt-1">
+                          <p
+                            className="text-xs text-red-600 mt-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             {errors.firstName}
                           </p>
                         )}
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Last name <span className="text-red-500">*</span>
                         </label>
                         <Input
@@ -570,9 +706,13 @@ export default function GetTicketPage() {
                           }}
                           placeholder="Enter last name"
                           className="focus-visible:ring-[#1B5A8C]"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
                         />
                         {errors.lastName && (
-                          <p className="text-xs text-red-600 mt-1">
+                          <p
+                            className="text-xs text-red-600 mt-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             {errors.lastName}
                           </p>
                         )}
@@ -581,7 +721,10 @@ export default function GetTicketPage() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Middle name
                         </label>
                         <Input
@@ -594,10 +737,14 @@ export default function GetTicketPage() {
                           }
                           placeholder="Enter middle name"
                           className="focus-visible:ring-[#1B5A8C]"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Suffix
                         </label>
                         <Select
@@ -609,12 +756,19 @@ export default function GetTicketPage() {
                             }))
                           }
                         >
-                          <SelectTrigger className="focus:ring-[#1B5A8C]">
+                          <SelectTrigger
+                            className="focus:ring-[#1B5A8C]"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             <SelectValue placeholder="None" />
                           </SelectTrigger>
                           <SelectContent>
                             {SUFFIXES.map((s) => (
-                              <SelectItem key={s} value={s}>
+                              <SelectItem
+                                key={s}
+                                value={s}
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {s || "None"}
                               </SelectItem>
                             ))}
@@ -626,7 +780,10 @@ export default function GetTicketPage() {
                     {/* Year & Section */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Year level <span className="text-red-500">*</span>
                         </label>
                         <Select
@@ -644,25 +801,38 @@ export default function GetTicketPage() {
                               });
                           }}
                         >
-                          <SelectTrigger className="focus:ring-[#1B5A8C]">
+                          <SelectTrigger
+                            className="focus:ring-[#1B5A8C]"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             <SelectValue placeholder="Select year level" />
                           </SelectTrigger>
                           <SelectContent>
                             {YEAR_LEVELS.map((y) => (
-                              <SelectItem key={y} value={y}>
+                              <SelectItem
+                                key={y}
+                                value={y}
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {y}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         {errors.year && (
-                          <p className="text-xs text-red-600 mt-1">
+                          <p
+                            className="text-xs text-red-600 mt-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             {errors.year}
                           </p>
                         )}
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                        <label
+                          className="text-sm font-medium text-gray-700 mb-1.5 block"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Section <span className="text-red-500">*</span>
                         </label>
                         <Select
@@ -680,19 +850,29 @@ export default function GetTicketPage() {
                               });
                           }}
                         >
-                          <SelectTrigger className="focus:ring-[#1B5A8C]">
+                          <SelectTrigger
+                            className="focus:ring-[#1B5A8C]"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             <SelectValue placeholder="Select section" />
                           </SelectTrigger>
                           <SelectContent>
                             {SECTIONS.map((s) => (
-                              <SelectItem key={s} value={s}>
+                              <SelectItem
+                                key={s}
+                                value={s}
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 Section {s}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                         {errors.section && (
-                          <p className="text-xs text-red-600 mt-1">
+                          <p
+                            className="text-xs text-red-600 mt-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             {errors.section}
                           </p>
                         )}
@@ -703,17 +883,26 @@ export default function GetTicketPage() {
                     {!isGuardian && (
                       <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
                         <div>
-                          <h3 className="text-sm font-semibold text-[#1B5A8C] mb-1">
+                          <h3
+                            className="text-sm font-semibold text-[#1B5A8C] mb-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             How can we reach you?
                           </h3>
-                          <p className="text-xs text-gray-500 mb-3">
+                          <p
+                            className="text-xs text-gray-500 mb-3"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             We'll send updates about your ticket here. Fill in
                             at least one.
                           </p>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                            <label
+                              className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               <Mail className="w-3.5 h-3.5 text-[#1B5A8C]" />
                               Email
                             </label>
@@ -734,15 +923,22 @@ export default function GetTicketPage() {
                               }}
                               placeholder="Enter email address"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.studentEmail && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.studentEmail}
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                            <label
+                              className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               <Phone className="w-3.5 h-3.5 text-[#1B5A8C]" />
                               Mobile number
                             </label>
@@ -763,9 +959,13 @@ export default function GetTicketPage() {
                               }}
                               placeholder="09XXXXXXXXX"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.studentContact && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.studentContact}
                               </p>
                             )}
@@ -789,10 +989,14 @@ export default function GetTicketPage() {
                           <label
                             htmlFor="guardian"
                             className="text-sm font-medium text-gray-900 cursor-pointer"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
                           >
                             A guardian or parent is processing this request
                           </label>
-                          <p className="text-xs text-gray-500">
+                          <p
+                            className="text-xs text-gray-500"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             Check this if you're a parent or guardian requesting
                             on behalf of the student
                           </p>
@@ -803,12 +1007,18 @@ export default function GetTicketPage() {
                     {/* Guardian Fields */}
                     {isGuardian && (
                       <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-                        <h3 className="text-sm font-semibold text-[#1B5A8C]">
+                        <h3
+                          className="text-sm font-semibold text-[#1B5A8C]"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
                           Tell us about you (Guardian/Parent)
                         </h3>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                            <label
+                              className="text-xs font-medium text-gray-700 mb-1 block"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               First name <span className="text-red-500">*</span>
                             </label>
                             <Input
@@ -827,15 +1037,22 @@ export default function GetTicketPage() {
                               }}
                               placeholder="Enter first name"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.guardianFirstName && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.guardianFirstName}
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                            <label
+                              className="text-xs font-medium text-gray-700 mb-1 block"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               Last name <span className="text-red-500">*</span>
                             </label>
                             <Input
@@ -854,15 +1071,22 @@ export default function GetTicketPage() {
                               }}
                               placeholder="Enter last name"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.guardianLastName && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.guardianLastName}
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                            <label
+                              className="text-xs font-medium text-gray-700 mb-1 block"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               Middle name
                             </label>
                             <Input
@@ -875,10 +1099,14 @@ export default function GetTicketPage() {
                               }
                               placeholder="Enter middle name"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-gray-700 mb-1 block">
+                            <label
+                              className="text-xs font-medium text-gray-700 mb-1 block"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               Relationship to student{" "}
                               <span className="text-red-500">*</span>
                             </label>
@@ -897,20 +1125,52 @@ export default function GetTicketPage() {
                                   });
                               }}
                             >
-                              <SelectTrigger className="focus:ring-[#1B5A8C]">
+                              <SelectTrigger
+                                className="focus:ring-[#1B5A8C]"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 <SelectValue placeholder="Select relationship" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="Father">Father</SelectItem>
-                                <SelectItem value="Mother">Mother</SelectItem>
-                                <SelectItem value="Guardian">
+                                <SelectItem
+                                  value="Father"
+                                  style={{
+                                    fontFamily: "var(--font-geist-sans)",
+                                  }}
+                                >
+                                  Father
+                                </SelectItem>
+                                <SelectItem
+                                  value="Mother"
+                                  style={{
+                                    fontFamily: "var(--font-geist-sans)",
+                                  }}
+                                >
+                                  Mother
+                                </SelectItem>
+                                <SelectItem
+                                  value="Guardian"
+                                  style={{
+                                    fontFamily: "var(--font-geist-sans)",
+                                  }}
+                                >
                                   Guardian
                                 </SelectItem>
-                                <SelectItem value="Other">Other</SelectItem>
+                                <SelectItem
+                                  value="Other"
+                                  style={{
+                                    fontFamily: "var(--font-geist-sans)",
+                                  }}
+                                >
+                                  Other
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             {errors.relationship && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.relationship}
                               </p>
                             )}
@@ -920,17 +1180,26 @@ export default function GetTicketPage() {
                         <Separator className="bg-gray-200" />
 
                         <div>
-                          <h3 className="text-sm font-semibold text-[#1B5A8C] mb-1">
+                          <h3
+                            className="text-sm font-semibold text-[#1B5A8C] mb-1"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             How can we reach you?
                           </h3>
-                          <p className="text-xs text-gray-500 mb-3">
+                          <p
+                            className="text-xs text-gray-500 mb-3"
+                            style={{ fontFamily: "var(--font-geist-sans)" }}
+                          >
                             We'll send updates about the ticket here. Fill in at
                             least one.
                           </p>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                            <label
+                              className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               <Mail className="w-3.5 h-3.5 text-[#1B5A8C]" />
                               Email
                             </label>
@@ -951,15 +1220,22 @@ export default function GetTicketPage() {
                               }}
                               placeholder="Enter email address"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.guardianEmail && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.guardianEmail}
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                            <label
+                              className="text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
+                            >
                               <Phone className="w-3.5 h-3.5 text-[#1B5A8C]" />
                               Mobile number
                             </label>
@@ -980,9 +1256,13 @@ export default function GetTicketPage() {
                               }}
                               placeholder="09XXXXXXXXX"
                               className="focus-visible:ring-[#1B5A8C]"
+                              style={{ fontFamily: "var(--font-geist-sans)" }}
                             />
                             {errors.guardianContact && (
-                              <p className="text-xs text-red-600 mt-1">
+                              <p
+                                className="text-xs text-red-600 mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
                                 {errors.guardianContact}
                               </p>
                             )}
@@ -997,16 +1277,18 @@ export default function GetTicketPage() {
                   <div className="flex justify-between">
                     <button
                       type="button"
-                      onClick={() => setStep(1)}
+                      onClick={() => router.push("/")}
                       className="text-sm font-medium text-[#1B5A8C] hover:text-[#0B3B5F] transition-colors flex items-center gap-1.5"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
                     >
                       <ArrowLeft className="w-4 h-4" />
-                      Back
+                      Change Transaction
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmitting}
                       className="inline-flex items-center px-6 py-2.5 bg-[#1B5A8C] text-white text-sm font-medium rounded-lg hover:bg-[#0B3B5F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
                     >
                       {isSubmitting
                         ? "Getting your ticket..."

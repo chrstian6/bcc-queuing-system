@@ -3,6 +3,7 @@
 
 import connectDB from "@/lib/mongodb";
 import Staff from "@/models/Staff";
+import User from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { sendWelcomeEmail } from "@/lib/email";
 
@@ -33,25 +34,57 @@ interface StaffResponse {
   };
 }
 
-function generateRandomPassword(length: number = 10): string {
-  const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const lowercase = "abcdefghjkmnpqrstuvwxyz";
-  const numbers = "23456789";
-  const all = uppercase + lowercase + numbers;
+/**
+ * Generate a simple, easy-to-read temporary password
+ * Format: word + number (e.g., "blue47", "happy23")
+ */
+function generateSimplePassword(): string {
+  const words = [
+    "blue",
+    "red",
+    "green",
+    "gold",
+    "silver",
+    "happy",
+    "sunny",
+    "brave",
+    "calm",
+    "wise",
+    "star",
+    "moon",
+    "lake",
+    "hill",
+    "wind",
+    "book",
+    "pen",
+    "desk",
+    "door",
+    "bell",
+    "rain",
+    "snow",
+    "fire",
+    "tree",
+    "bird",
+    "dawn",
+    "dusk",
+    "noon",
+    "mist",
+    "dew",
+    "rose",
+    "lily",
+    "pine",
+    "oak",
+    "elm",
+    "lion",
+    "deer",
+    "hawk",
+    "dove",
+    "fox",
+  ];
 
-  let password = "";
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-
-  for (let i = password.length; i < length; i++) {
-    password += all[Math.floor(Math.random() * all.length)];
-  }
-
-  return password
-    .split("")
-    .sort(() => Math.random() - 0.5)
-    .join("");
+  const word = words[Math.floor(Math.random() * words.length)];
+  const number = Math.floor(Math.random() * 90) + 10; // 10-99
+  return `${word}${number}`;
 }
 
 export async function createStaffAccount(
@@ -78,27 +111,40 @@ export async function createStaffAccount(
 
     await connectDB();
 
-    const existingEmail = await Staff.findOne({
+    // Check if email already exists in Staff collection
+    const existingStaffEmail = await Staff.findOne({
       email: data.email.toLowerCase(),
-    } as any);
-    if (existingEmail) {
+    });
+    if (existingStaffEmail) {
       return {
         success: false,
         error: "A staff account with this email already exists",
       };
     }
 
-    const existingFacultyId = await Staff.findOne({
+    // Check if email already exists in User (Admin) collection
+    const existingUserEmail = await User.findOne({
+      email: data.email.toLowerCase(),
+    });
+    if (existingUserEmail) {
+      return {
+        success: false,
+        error: "An admin account with this email already exists",
+      };
+    }
+
+    // Check if faculty ID already exists in Staff collection
+    const existingStaffFacultyId = await Staff.findOne({
       facultyId: data.facultyId,
-    } as any);
-    if (existingFacultyId) {
+    });
+    if (existingStaffFacultyId) {
       return {
         success: false,
         error: "A staff account with this faculty ID already exists",
       };
     }
 
-    const tempPassword = generateRandomPassword(10);
+    const tempPassword = generateSimplePassword();
 
     const staffData: any = {
       facultyId: data.facultyId,

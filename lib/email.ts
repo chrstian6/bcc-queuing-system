@@ -1,6 +1,10 @@
 // lib/email.ts
 import transporter from "./nodemailer";
 
+// ──────────────────────────────────────────────
+// Interfaces
+// ──────────────────────────────────────────────
+
 interface WelcomeEmailData {
   email: string;
   firstName: string;
@@ -9,6 +13,28 @@ interface WelcomeEmailData {
   staffId: string;
 }
 
+interface TicketNotificationData {
+  email: string;
+  studentName: string;
+  ticketNumber: string;
+  ticketId: string;
+  transactionType: string;
+  queuePosition?: number;
+}
+
+interface EmailTemplateConfig {
+  title: string;
+  subtitle?: string;
+  content: string;
+  actionLabel?: string;
+  actionUrl?: string;
+  footerNote?: string;
+}
+
+// ──────────────────────────────────────────────
+// Labels
+// ──────────────────────────────────────────────
+
 const roleLabels: Record<string, string> = {
   registrar: "Registrar",
   dean: "Dean",
@@ -16,74 +42,318 @@ const roleLabels: Record<string, string> = {
   cashier: "Cashier",
 };
 
-function getWelcomeEmailTemplate(data: WelcomeEmailData): string {
-  const loginUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+const transactionLabels: Record<string, string> = {
+  tor: "Transcript of Records",
+  coe: "Certificate of Enrollment",
+  "request-grades": "Request for Grades",
+  "enrollment-fees": "Enrollment Fees",
+  assessment: "Request Assessment",
+  "exam-fees": "Exam Fees",
+  payments: "Payments",
+  certificate: "Certificate",
+};
+
+// ──────────────────────────────────────────────
+// Email Configuration
+// ──────────────────────────────────────────────
+
+function getSenderConfig() {
+  const senderEmail = process.env.SMTP_USER || "";
+  const senderDomain = senderEmail.split("@")[1] || "bcc.edu.ph";
+
+  return {
+    from: `"BCC Queue System" <${senderEmail}>`,
+    senderEmail,
+    senderDomain,
+  };
+}
+
+function getMessageId(senderDomain: string): string {
+  return `<${Date.now()}-${Math.random().toString(36).substring(7)}@${senderDomain}>`;
+}
+
+// ──────────────────────────────────────────────
+// Reusable Minimalist Email Template
+// ──────────────────────────────────────────────
+
+function getEmailTemplate(config: EmailTemplateConfig): string {
+  const { title, subtitle, content, actionLabel, actionUrl, footerNote } =
+    config;
+  const currentYear = new Date().getFullYear();
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #fafafa;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="520" style="max-width: 520px; width: 100%;">
+
+          <tr>
+            <td align="center" style="padding-bottom: 32px;">
+              <span style="font-size: 11px; color: #a0a0a0; text-transform: uppercase; letter-spacing: 2px;">Binalbagan Catholic College</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color: #ffffff; border-radius: 12px; padding: 48px 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+
+              <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center; line-height: 1.3;">
+                ${title}
+              </h2>
+
+              ${
+                subtitle
+                  ? `
+              <p style="margin: 0 0 32px 0; font-size: 13px; color: #888888; text-align: center; line-height: 1.5;">
+                ${subtitle}
+              </p>
+              `
+                  : ""
+              }
+
+              <div style="margin-bottom: ${actionUrl ? "32px" : "0"};">
+                ${content}
+              </div>
+
+              ${
+                actionUrl && actionLabel
+                  ? `
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <a href="${actionUrl}" style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: center;">
+                      ${actionLabel}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              `
+                  : ""
+              }
+
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding-top: 24px;">
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #c0c0c0; line-height: 1.5;">
+                ${footerNote || "This is an automated message from BCC Queue System."}
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #c0c0c0;">
+                © ${currentYear} Binalbagan Catholic College Inc.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+// ──────────────────────────────────────────────
+// Email Content Builders
+// ──────────────────────────────────────────────
+
+function buildWelcomeContent(data: WelcomeEmailData): string {
   const roleLabel = roleLabels[data.roleName] || data.roleName;
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="background-color: #1B5A8C; padding: 20px; border-radius: 8px 8px 0 0;">
-        <h1 style="color: white; margin: 0; font-size: 24px;">BCC Queue Management System</h1>
-      </div>
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
+      Your staff account has been created.
+    </p>
 
-      <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
-        <h2 style="color: #1B5A8C; margin-top: 0;">Welcome, ${data.firstName}!</h2>
-
-        <p style="color: #333; font-size: 16px; line-height: 1.6;">
-          Your staff account has been created for the <strong>BCC Queue Management System</strong>.
-        </p>
-
-        <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <p style="margin: 5px 0; color: #555;"><strong>Staff ID:</strong> ${data.staffId}</p>
-          <p style="margin: 5px 0; color: #555;"><strong>Role:</strong> ${roleLabel}</p>
-          <p style="margin: 5px 0; color: #555;"><strong>Email:</strong> ${data.email}</p>
-          <p style="margin: 5px 0; color: #555;"><strong>Temporary Password:</strong> <span style="font-family: monospace; background: #e8e8e8; padding: 2px 8px; border-radius: 4px;">${data.tempPassword}</span></p>
-        </div>
-
-        <div style="background-color: #FFF3CD; border: 1px solid #FFE69C; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <p style="color: #856404; margin: 0; font-weight: bold;">⚠️ Important: Change Your Password</p>
-          <p style="color: #856404; margin: 8px 0 0 0; font-size: 14px;">
-            For security reasons, you are required to change your temporary password immediately after logging in.
-            This password will expire after your first login.
-          </p>
-        </div>
-
-        <div style="margin: 30px 0;">
-          <p style="color: #333; font-size: 15px; line-height: 1.6;">
-            <strong>How to get started:</strong>
-          </p>
-          <ol style="color: #555; font-size: 14px; line-height: 1.8;">
-            <li>Go to <a href="${loginUrl}" style="color: #1B5A8C;">${loginUrl}</a></li>
-            <li>Click <strong>Login</strong> and select <strong>Admin / Faculty</strong></li>
-            <li>Enter your email and temporary password</li>
-            <li>You'll be prompted to change your password immediately</li>
-            <li>Set a new secure password that you'll remember</li>
-          </ol>
-        </div>
-
-        <a href="${loginUrl}" style="display: inline-block; background-color: #1B5A8C; color: white; padding: 14px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
-          Login to BCC Queue System
-        </a>
-
-        <p style="color: #888; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
-          This is an automated message from BCC Queue Management System. If you did not expect this email, please contact the IT Department immediately.
-        </p>
-      </div>
+    <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; margin-bottom: 8px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Staff ID</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.staffId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Role</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${roleLabel}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Email</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.email}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Temp Password</td>
+          <td style="padding: 6px 0; font-size: 13px; font-weight: 500; text-align: right;">
+            <code style="font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace; font-size: 13px; color: #1a1a1a; background: #eeeeee; padding: 3px 10px; border-radius: 4px;">${data.tempPassword}</code>
+          </td>
+        </tr>
+      </table>
     </div>
-  `;
+
+    <p style="margin: 24px 0 0 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">
+      Please change your password immediately after logging in.
+    </p>`;
 }
 
+function buildTicketContent(data: TicketNotificationData): string {
+  const transactionLabel =
+    transactionLabels[data.transactionType] || data.transactionType;
+
+  return `
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
+      Your ticket has been created successfully.
+    </p>
+
+    <div style="text-align: center; margin-bottom: 24px;">
+      <p style="margin: 0 0 4px 0; font-size: 10px; color: #aaaaaa; text-transform: uppercase; letter-spacing: 1.5px;">Ticket Number</p>
+      <p style="margin: 0; font-size: 40px; font-weight: 700; color: #1a1a1a; letter-spacing: 2px; font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;">${data.ticketNumber}</p>
+      <p style="margin: 4px 0 0 0; font-size: 11px; color: #cccccc;">${data.ticketId}</p>
+    </div>
+
+    <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; margin-bottom: 8px;">
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Transaction</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${transactionLabel}</td>
+        </tr>
+        ${
+          data.queuePosition
+            ? `
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Queue Position</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">#${data.queuePosition}</td>
+        </tr>
+        `
+            : ""
+        }
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Student</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.studentName}</td>
+        </tr>
+      </table>
+    </div>`;
+}
+
+function buildPasswordResetContent(
+  firstName: string,
+  resetUrl: string,
+): string {
+  return `
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
+      Hello ${firstName},<br>you requested to reset your password.
+    </p>
+
+    <p style="margin: 0 0 8px 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">
+      This link will expire in 1 hour. If you did not request this, you can safely ignore this email.
+    </p>`;
+}
+
+// ──────────────────────────────────────────────
+// Plain Text Fallbacks
+// ──────────────────────────────────────────────
+
+function getWelcomePlainText(data: WelcomeEmailData): string {
+  const roleLabel = roleLabels[data.roleName] || data.roleName;
+  const loginUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+
+  return [
+    `Welcome ${data.firstName}!`,
+    ``,
+    `Your staff account has been created for the BCC Queue Management System.`,
+    ``,
+    `Staff ID: ${data.staffId}`,
+    `Role: ${roleLabel}`,
+    `Email: ${data.email}`,
+    `Temporary Password: ${data.tempPassword}`,
+    ``,
+    `Login here: ${loginUrl}`,
+    ``,
+    `Please change your password immediately after logging in.`,
+    ``,
+    `Binalbagan Catholic College Inc.`,
+  ].join("\n");
+}
+
+function getTicketPlainText(data: TicketNotificationData): string {
+  const transactionLabel =
+    transactionLabels[data.transactionType] || data.transactionType;
+
+  return [
+    `Hello ${data.studentName},`,
+    ``,
+    `Your queue ticket has been created.`,
+    ``,
+    `Ticket Number: ${data.ticketNumber}`,
+    `Ticket ID: ${data.ticketId}`,
+    `Transaction: ${transactionLabel}`,
+    data.queuePosition ? `Queue Position: #${data.queuePosition}` : "",
+    `Student: ${data.studentName}`,
+    ``,
+    `Please keep this ticket number for reference.`,
+    ``,
+    `Binalbagan Catholic College Inc.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function getPasswordResetPlainText(
+  firstName: string,
+  resetUrl: string,
+): string {
+  return [
+    `Hello ${firstName},`,
+    ``,
+    `You requested to reset your password for the BCC Queue Management System.`,
+    ``,
+    `Reset your password here: ${resetUrl}`,
+    ``,
+    `This link will expire in 1 hour.`,
+    `If you did not request this, please ignore this email.`,
+    ``,
+    `Binalbagan Catholic College Inc.`,
+  ].join("\n");
+}
+
+// ──────────────────────────────────────────────
+// Email Sending Functions
+// ──────────────────────────────────────────────
+
+/**
+ * Send welcome email to newly created staff accounts
+ */
 export async function sendWelcomeEmail(
   data: WelcomeEmailData,
 ): Promise<boolean> {
   try {
     const roleLabel = roleLabels[data.roleName] || data.roleName;
+    const loginUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const { from, senderDomain } = getSenderConfig();
 
     await transporter.sendMail({
-      from: `"BCC Queue System" <${process.env.SMTP_USER}>`,
+      from,
       to: data.email,
       subject: `Welcome to BCC Queue System - ${roleLabel} Account`,
-      html: getWelcomeEmailTemplate(data),
+      html: getEmailTemplate({
+        title: `Welcome, ${data.firstName}`,
+        subtitle: "Your staff account is ready",
+        content: buildWelcomeContent(data),
+        actionLabel: "Login to BCC Queue System",
+        actionUrl: loginUrl,
+      }),
+      text: getWelcomePlainText(data),
+      headers: {
+        "X-Priority": "3",
+        "X-Mailer": "BCC Queue Management System",
+        "Message-ID": getMessageId(senderDomain),
+        "List-Unsubscribe": `<mailto:${process.env.SMTP_USER}?subject=unsubscribe>`,
+      },
     });
 
     console.log(`Welcome email sent to ${data.email}`);
@@ -94,6 +364,54 @@ export async function sendWelcomeEmail(
   }
 }
 
+/**
+ * Send ticket notification email to students/guardians
+ */
+export async function sendTicketNotificationEmail(
+  data: TicketNotificationData,
+): Promise<boolean> {
+  try {
+    const transactionLabel =
+      transactionLabels[data.transactionType] || data.transactionType;
+    const { from, senderDomain } = getSenderConfig();
+
+    const mailOptions = {
+      from,
+      to: data.email,
+      subject: `Ticket #${data.ticketNumber} - ${transactionLabel}`,
+      html: getEmailTemplate({
+        title: `Hello, ${data.studentName}`,
+        subtitle: transactionLabel,
+        content: buildTicketContent(data),
+        footerNote:
+          "Please keep this ticket for reference. We'll notify you when it's your turn.",
+      }),
+      text: getTicketPlainText(data),
+      headers: {
+        "X-Priority": "3",
+        "X-Mailer": "BCC Queue Management System",
+        "Message-ID": getMessageId(senderDomain),
+        "List-Unsubscribe": `<mailto:${process.env.SMTP_USER}?subject=unsubscribe>`,
+      },
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(
+      `Ticket email sent to ${data.email} (#${data.ticketNumber}), MessageID: ${info.messageId}`,
+    );
+    return true;
+  } catch (error: any) {
+    console.error(
+      "Failed to send ticket notification email:",
+      error.message || error,
+    );
+    return false;
+  }
+}
+
+/**
+ * Send password reset email
+ */
 export async function sendPasswordResetEmail(
   email: string,
   firstName: string,
@@ -101,40 +419,29 @@ export async function sendPasswordResetEmail(
 ): Promise<boolean> {
   try {
     const resetUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #1B5A8C; padding: 20px; border-radius: 8px 8px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 24px;">BCC Queue Management System</h1>
-        </div>
-
-        <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
-          <h2 style="color: #1B5A8C; margin-top: 0;">Password Reset Request</h2>
-
-          <p style="color: #333; font-size: 16px; line-height: 1.6;">
-            Hello ${firstName}, you requested to reset your password for the BCC Queue Management System.
-          </p>
-
-          <div style="margin: 30px 0; text-align: center;">
-            <a href="${resetUrl}" style="display: inline-block; background-color: #1B5A8C; color: white; padding: 14px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
-              Reset Your Password
-            </a>
-          </div>
-
-          <p style="color: #888; font-size: 12px; margin-top: 30px; border-top: 1px solid #e0e0e0; padding-top: 20px;">
-            If you did not request this, please ignore this email. This link will expire in 1 hour.
-          </p>
-        </div>
-      </div>
-    `;
+    const { from, senderDomain } = getSenderConfig();
 
     await transporter.sendMail({
-      from: `"BCC Queue System" <${process.env.SMTP_USER}>`,
+      from,
       to: email,
-      subject: "BCC Queue System - Password Reset Request",
-      html,
+      subject: "Password Reset Request",
+      html: getEmailTemplate({
+        title: "Password Reset",
+        subtitle: "BCC Queue Management System",
+        content: buildPasswordResetContent(firstName, resetUrl),
+        actionLabel: "Reset Your Password",
+        actionUrl: resetUrl,
+        footerNote: "If you did not request this, please ignore this email.",
+      }),
+      text: getPasswordResetPlainText(firstName, resetUrl),
+      headers: {
+        "X-Priority": "3",
+        "X-Mailer": "BCC Queue Management System",
+        "Message-ID": getMessageId(senderDomain),
+      },
     });
 
+    console.log(`Password reset email sent to ${email}`);
     return true;
   } catch (error) {
     console.error("Failed to send password reset email:", error);

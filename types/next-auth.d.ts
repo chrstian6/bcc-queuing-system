@@ -3,18 +3,26 @@ import "next-auth";
 
 declare module "next-auth" {
   interface User {
-    id?: string;
     role?: string;
-    name?: string;
+    staffId?: string;
+    facultyId?: string;
+    staffRole?: string;
+    cashierWindow?: string;
+    mustChangePassword?: boolean;
   }
 
   interface Session {
     user: {
       id?: string;
-      role?: string;
-      name?: string | null;
       email?: string | null;
+      name?: string | null;
       image?: string | null;
+      role?: string;
+      staffId?: string;
+      facultyId?: string;
+      staffRole?: string;
+      cashierWindow?: string;
+      mustChangePassword?: boolean;
     };
   }
 }
@@ -22,7 +30,10 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: string;
-    id?: string;
-    name?: string;
+    staffId?: string;
+    facultyId?: string;
+    staffRole?: string;
+    cashierWindow?: string;
+    mustChangePassword?: boolean;
   }
 }

@@ -4,6 +4,7 @@
 import { signIn, signOut, auth } from "@/lib/auth";
 import connectDB from "@/lib/mongodb";
 import User, { UserRole } from "@/models/User";
+import Staff from "@/models/Staff";
 import { revalidatePath } from "next/cache";
 
 interface AuthResponse {
@@ -11,12 +12,24 @@ interface AuthResponse {
   error?: string;
   message?: string;
   redirectTo?: string;
+  mustChangePassword?: boolean;
+}
+
+// Helper function instead of exported constant
+function getStaffRoleNumber(roleName: string): number {
+  const roleMap: Record<string, number> = {
+    registrar: 3,
+    dean: 4,
+    dsdw: 5,
+    cashier: 6,
+  };
+  return roleMap[roleName] || 6;
 }
 
 export async function loginAction(
   email: string,
   password: string,
-  role: "admin" | "student",
+  role: "admin" | "staff",
 ): Promise<AuthResponse> {
   try {
     if (!email || !password || !role) {
@@ -34,13 +47,16 @@ export async function loginAction(
       };
     }
 
-    // Convert role string to number for the credentials
-    const roleNumber = role === "admin" ? UserRole.ADMIN : UserRole.STUDENT;
+    // For staff login, verify credentials directly since they use Staff model
+    if (role === "staff") {
+      return await staffLogin(email, password);
+    }
 
+    // Admin login
     const result = await signIn("credentials", {
       email: email.toLowerCase().trim(),
       password,
-      role: roleNumber.toString(),
+      role: UserRole.ADMIN.toString(),
       redirect: false,
     });
 
@@ -48,7 +64,8 @@ export async function loginAction(
       const errorMessages: Record<string, string> = {
         "Invalid email or password":
           "Invalid email or password. Please try again.",
-        "Invalid credentials for this role": `Invalid ${role} credentials. Please check your email and password.`,
+        "Invalid credentials for this role":
+          "Invalid admin credentials. Please check your email and password.",
         "Please provide all required fields":
           "Please fill in all required fields.",
         "Invalid role specified": "Invalid role specified. Please try again.",
@@ -62,12 +79,11 @@ export async function loginAction(
 
     revalidatePath("/");
     revalidatePath("/admin/dashboard");
-    revalidatePath("/student/dashboard");
 
     return {
       success: true,
       message: "Login successful",
-      redirectTo: role === "admin" ? "/admin/dashboard" : "/student/dashboard",
+      redirectTo: "/admin/dashboard",
     };
   } catch (error: any) {
     console.error("Login error:", error);
@@ -86,12 +102,90 @@ export async function loginAction(
   }
 }
 
+// In actions/auth.ts - Update the staffLogin function redirects
+async function staffLogin(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
+  try {
+    await connectDB();
+
+    const staff = await Staff.findOne({
+      email: email.toLowerCase().trim(),
+      status: "active",
+    }).select("+password");
+
+    if (!staff) {
+      return {
+        success: false,
+        error: "Invalid staff credentials or account is inactive.",
+      };
+    }
+
+    const isPasswordValid = await staff.comparePassword(password);
+
+    if (!isPasswordValid) {
+      return {
+        success: false,
+        error: "Invalid email or password. Please try again.",
+      };
+    }
+
+    // Dynamic redirect based on role
+    const redirectTo = `/staff/${staff.roleName}/dashboard`;
+
+    const roleNumber = getStaffRoleNumber(staff.roleName);
+
+    const result = await signIn("credentials", {
+      email: email.toLowerCase().trim(),
+      password,
+      role: roleNumber.toString(),
+      redirect: false,
+    });
+
+    if (result?.error) {
+      return {
+        success: false,
+        error: result.error,
+      };
+    }
+
+    // If must change password, redirect to standalone change password page
+    if (staff.mustChangePassword) {
+      return {
+        success: true,
+        message: "Please change your password",
+        redirectTo: "/change-password",
+        mustChangePassword: true,
+      };
+    }
+
+    revalidatePath("/");
+    revalidatePath(redirectTo);
+
+    return {
+      success: true,
+      message: "Login successful",
+      redirectTo,
+    };
+  } catch (error: any) {
+    console.error("Staff login error:", error);
+    return {
+      success: false,
+      error: "Staff login failed. Please try again.",
+    };
+  }
+}
+
 export async function logoutAction(): Promise<AuthResponse> {
   try {
     await signOut({ redirect: false });
     revalidatePath("/");
     revalidatePath("/admin/dashboard");
-    revalidatePath("/student/dashboard");
+    revalidatePath("/registrar/dashboard");
+    revalidatePath("/dean/dashboard");
+    revalidatePath("/dsdw/dashboard");
+    revalidatePath("/cashier/dashboard");
     return { success: true, message: "Logged out successfully" };
   } catch (error: any) {
     console.error("Logout error:", error);
@@ -102,11 +196,10 @@ export async function logoutAction(): Promise<AuthResponse> {
 export async function registerAction(
   email: string,
   password: string,
-  role: "admin" | "student",
   name?: string,
 ): Promise<AuthResponse> {
   try {
-    if (!email || !password || !role) {
+    if (!email || !password) {
       return { success: false, error: "Please provide all required fields" };
     }
 
@@ -119,10 +212,6 @@ export async function registerAction(
         success: false,
         error: "Password must be at least 6 characters",
       };
-    }
-
-    if (role !== "admin" && role !== "student") {
-      return { success: false, error: "Invalid role specified" };
     }
 
     await connectDB();
@@ -138,31 +227,18 @@ export async function registerAction(
       };
     }
 
-    // Create new user with numeric role
     const user = new User({
       email: email.toLowerCase().trim(),
       password,
-      role: role === "admin" ? UserRole.ADMIN : UserRole.STUDENT,
+      role: UserRole.ADMIN,
       name: name || email.split("@")[0],
     });
 
     await user.save();
 
-    // Auto login after registration
-    const loginResult = await loginAction(email, password, role);
-
-    if (!loginResult.success) {
-      return {
-        success: false,
-        error:
-          "Registration successful but auto-login failed. Please login manually.",
-      };
-    }
-
     return {
       success: true,
-      message: "Registration successful",
-      redirectTo: role === "admin" ? "/admin/dashboard" : "/student/dashboard",
+      message: "Admin account created successfully",
     };
   } catch (error: any) {
     console.error("Registration error:", error);
@@ -206,7 +282,7 @@ export async function getSession() {
   }
 }
 
-export async function checkAuth(requiredRole?: "admin" | "student") {
+export async function checkAuth(requiredRole?: "admin" | "staff") {
   try {
     const session = await auth();
 
@@ -218,21 +294,27 @@ export async function checkAuth(requiredRole?: "admin" | "student") {
       };
     }
 
-    // Convert role check to match numeric roles stored in token
-    const requiredRoleNumber =
-      requiredRole === "admin"
-        ? "1"
-        : requiredRole === "student"
-          ? "2"
-          : undefined;
+    if (requiredRole) {
+      if (requiredRole === "admin" && session.user?.role !== "1") {
+        return {
+          isAuthenticated: true,
+          isAuthorized: false,
+          error: "Access denied. Admin role required.",
+          redirect: "/?error=forbidden",
+        };
+      }
 
-    if (requiredRoleNumber && session.user?.role !== requiredRoleNumber) {
-      return {
-        isAuthenticated: true,
-        isAuthorized: false,
-        error: `Access denied. ${requiredRole} role required.`,
-        redirect: "/?error=forbidden",
-      };
+      if (requiredRole === "staff") {
+        const staffRoles = ["3", "4", "5", "6"];
+        if (!staffRoles.includes(session.user?.role || "")) {
+          return {
+            isAuthenticated: true,
+            isAuthorized: false,
+            error: "Access denied. Staff role required.",
+            redirect: "/?error=forbidden",
+          };
+        }
+      }
     }
 
     return {

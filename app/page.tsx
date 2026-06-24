@@ -8,6 +8,16 @@ import HeroSection from "@/components/public/HeroSection";
 import Header from "@/components/public/Header";
 import LoginModal from "@/components/public/LoginModal";
 
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronRight, AlertCircle, X } from "lucide-react";
+
 const geistSans = Geist({
   subsets: ["latin"],
   variable: "--font-geist-sans",
@@ -19,28 +29,105 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
+// Transaction types data
+const transactionTypes = [
+  {
+    id: "tor",
+    label: "Request for TOR",
+    description: "Transcript of Records - official academic record",
+  },
+  {
+    id: "coe",
+    label: "Request for COE",
+    description: "Certificate of Enrollment - proof of enrollment",
+  },
+  {
+    id: "request-grades",
+    label: "Request for Grades",
+    description: "Official grade report per semester or term",
+  },
+  {
+    id: "enrollment-fees",
+    label: "Enrollment Fees",
+    description: "Payment for enrollment and registration fees",
+  },
+  {
+    id: "assessment",
+    label: "Request Assessment",
+    description: "Request breakdown of fees, charges, and balances",
+  },
+  {
+    id: "exam-fees",
+    label: "Exam Fees",
+    description: "Payment for examination-related fees and permits",
+  },
+  {
+    id: "payments",
+    label: "Payments",
+    description: "General payments for tuition, miscellaneous, and other fees",
+  },
+];
+
+// Error messages mapping
+const authErrorMessages: Record<string, { title: string; message: string }> = {
+  unauthorized: {
+    title: "Login Required",
+    message:
+      "Please login to access this page. Use your admin or staff credentials to continue.",
+  },
+  forbidden: {
+    title: "Access Denied",
+    message:
+      "You don't have permission to access this page. Please login with the correct account type.",
+  },
+  "invalid-role": {
+    title: "Invalid Role",
+    message:
+      "The requested role is not valid. Please contact the IT department for assistance.",
+  },
+  auth_error: {
+    title: "Authentication Error",
+    message: "An authentication error occurred. Please try logging in again.",
+  },
+};
+
 function HomeContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [authError, setAuthError] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
 
   // Open login modal if redirected from protected route
   useEffect(() => {
-    const error = searchParams.get("error");
-    if (error === "unauthorized" || error === "forbidden") {
+    const errorParam = searchParams.get("error");
+    if (errorParam && authErrorMessages[errorParam]) {
+      setAuthError(authErrorMessages[errorParam]);
       setIsModalOpen(true);
-      // Clean URL without reloading
       router.replace("/");
     }
   }, [searchParams, router]);
 
-  const handleLogin = (role: "admin" | "student", email: string) => {
-    console.log(`Logged in as ${role}: ${email}`);
-    if (role === "admin") {
-      router.push("/admin/dashboard");
-    } else {
-      router.push("/student/dashboard");
+  const handleTransactionSelect = (value: string) => {
+    setSelectedTransaction(value);
+    setError("");
+  };
+
+  const handleContinue = () => {
+    if (!selectedTransaction) {
+      setError("Please select a transaction type to continue");
+      return;
     }
+    router.push(`/public/schedule?type=${selectedTransaction}`);
+  };
+
+  const handleLogin = (email: string) => {
+    console.log(`Login successful for: ${email}`);
+    setAuthError(null);
   };
 
   const features = [
@@ -126,20 +213,156 @@ function HomeContent() {
     },
   ];
 
+  const selectedTransactionLabel = transactionTypes.find(
+    (t) => t.id === selectedTransaction,
+  )?.label;
+
   return (
     <div
       className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white font-sans`}
     >
+      {/* Auth Error Banner */}
+      {authError && (
+        <div className="fixed top-4 right-4 z-50 max-w-md bg-white border border-red-200 rounded-xl shadow-lg p-4 animate-in slide-in-from-top-2 fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-gray-900 font-['Plus_Jakarta_Sans']">
+                {authError.title}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1 font-['Plus_Jakarta_Sans']">
+                {authError.message}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => {
+                    setAuthError(null);
+                    setIsModalOpen(true);
+                  }}
+                  className="text-sm font-medium text-[#1B5A8C] hover:text-[#0B3B5F] font-['Plus_Jakarta_Sans']"
+                >
+                  Login now →
+                </button>
+                <button
+                  onClick={() => setAuthError(null)}
+                  className="text-sm text-gray-500 hover:text-gray-700 font-['Plus_Jakarta_Sans']"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={() => setAuthError(null)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header Component */}
       <Header onLoginClick={() => setIsModalOpen(true)} />
 
       {/* Hero Section */}
       <HeroSection />
 
+      {/* Transaction Selection Section */}
+      <div className="px-6 md:px-10 py-12">
+        <div className="max-w-lg mx-auto">
+          <div className="text-center mb-8">
+            <h2
+              className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 tracking-tight"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              Get in Line
+            </h2>
+            <p
+              className="text-gray-500 text-sm md:text-base leading-relaxed"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              Choose the service you need and join the virtual queue. We'll
+              notify you when it's your turn.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label
+                htmlFor="transaction-select"
+                className="text-sm font-medium text-gray-700 mb-2 block"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+              >
+                What do you need today?
+              </label>
+              <Select
+                value={selectedTransaction}
+                onValueChange={handleTransactionSelect}
+              >
+                <SelectTrigger
+                  id="transaction-select"
+                  className="w-full h-14 px-5 text-base border-gray-200 hover:border-gray-300 focus:ring-[#1B5A8C] focus:border-[#1B5A8C] transition-colors"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  <SelectValue placeholder="Select a transaction type...">
+                    {selectedTransactionLabel || "Select a transaction type..."}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="p-1">
+                  {transactionTypes.map((type) => (
+                    <SelectItem
+                      key={type.id}
+                      value={type.id}
+                      className="py-3.5 px-4 rounded-md cursor-pointer data-[state=checked]:bg-[#1B5A8C]/5 data-[state=checked]:text-[#1B5A8C] focus:bg-gray-50"
+                    >
+                      <div className="flex flex-col">
+                        <span
+                          className="text-sm font-medium text-gray-900"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
+                          {type.label}
+                        </span>
+                        <span
+                          className="text-xs text-gray-500 mt-0.5"
+                          style={{ fontFamily: "var(--font-geist-sans)" }}
+                        >
+                          {type.description}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-red-600">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span style={{ fontFamily: "var(--font-geist-sans)" }}>
+                  {error}
+                </span>
+              </div>
+            )}
+
+            <Button
+              onClick={handleContinue}
+              className="w-full h-12 bg-[#1B5A8C] hover:bg-[#0B3B5F] text-white font-medium text-sm transition-colors"
+              style={{ fontFamily: "var(--font-geist-sans)" }}
+            >
+              Get Ticket
+              <ChevronRight className="w-4 h-4 ml-1.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Features Section */}
-      <div className="px-8 py-12 md:py-16 bg-white">
+      <div className="px-8 py-12 md:py-16">
         <div className="max-w-6xl mx-auto">
-          {/* Section Header */}
           <div className="text-center mb-10 md:mb-12">
             <h2
               className="text-xl md:text-2xl font-semibold text-gray-900 mb-2 tracking-tight"
@@ -157,11 +380,13 @@ function HomeContent() {
             </p>
           </div>
 
-          {/* Features Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10">
             {features.map((feature, index) => (
-              <div key={index} className="flex flex-col p-2">
-                <div className="mb-3 text-[#1B5A8C]">{feature.icon}</div>
+              <div
+                key={index}
+                className="flex flex-col p-4 rounded-xl border border-transparent hover:border-gray-200 hover:shadow-sm transition-all duration-300"
+              >
+                <div className="mb-3 text-gray-900">{feature.icon}</div>
                 <h3
                   className="text-base font-semibold text-gray-900 mb-1.5 tracking-tight"
                   style={{ fontFamily: "var(--font-geist-sans)" }}
@@ -183,7 +408,10 @@ function HomeContent() {
       {/* Login Modal */}
       <LoginModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setAuthError(null);
+        }}
         onLogin={handleLogin}
       />
     </div>

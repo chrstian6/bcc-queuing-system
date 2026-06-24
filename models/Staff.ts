@@ -1,5 +1,7 @@
 // models/Staff.ts
 import mongoose, { Document, Model } from "mongoose";
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 export interface IStaff extends Document {
   staffId: string;
@@ -12,6 +14,7 @@ export interface IStaff extends Document {
   roleAccessLevel: number;
   cashierWindow: string;
   status: "active" | "inactive" | "suspended";
+  mustChangePassword: boolean;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -21,7 +24,6 @@ const staffSchema = new mongoose.Schema<IStaff>(
   {
     staffId: {
       type: String,
-      required: [true, "Staff ID is required"],
       unique: true,
     },
     facultyId: {
@@ -45,7 +47,10 @@ const staffSchema = new mongoose.Schema<IStaff>(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^[^\s@]+@bcc\.edu\.ph$/, "Must be a valid BCC email"],
+      match: [
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+        "Please enter a valid email address",
+      ],
     },
     password: {
       type: String,
@@ -73,29 +78,70 @@ const staffSchema = new mongoose.Schema<IStaff>(
       enum: ["active", "inactive", "suspended"],
       default: "active",
     },
+    mustChangePassword: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
-// Generate staff ID before saving
+// Generate unique random staff ID
+function generateStaffId(): string {
+  const timestamp = Date.now().toString(36).slice(-4).toUpperCase();
+  const randomBytes = crypto
+    .randomBytes(4)
+    .toString("hex")
+    .slice(0, 4)
+    .toUpperCase();
+  return `STF-${timestamp}${randomBytes}`;
+}
+
+// Generate staff ID before saving with uniqueness check
 staffSchema.pre("save", async function (next) {
   if (this.isNew) {
-    const count = await mongoose.model("Staff").countDocuments();
-    this.staffId = `STF-${String(count + 1).padStart(4, "0")}`;
+    try {
+      let isUnique = false;
+      let staffId = "";
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (!isUnique && attempts < maxAttempts) {
+        staffId = generateStaffId();
+        const existing = await mongoose.model("Staff").findOne({ staffId });
+        if (!existing) {
+          isUnique = true;
+        }
+        attempts++;
+      }
+
+      if (!isUnique) {
+        return new Error("Failed to generate unique staff ID");
+      }
+
+      this.staffId = staffId;
+    } catch (error: any) {
+      return new Error("Failed to generate unique staff ID");
+    }
+  } else {
   }
 });
 
 // Hash password before saving
 staffSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return;
+
   try {
-    const bcrypt = await import("bcryptjs");
+    if (this.password.startsWith("$2")) {
+      return;
+    }
+
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
   } catch (error: any) {
-    throw error;
+    return new Error("Failed to hash password");
   }
 });
 
@@ -104,15 +150,22 @@ staffSchema.methods.comparePassword = async function (
   candidatePassword: string,
 ): Promise<boolean> {
   try {
-    const bcrypt = await import("bcryptjs");
-    return await bcrypt.compare(candidatePassword, this.password);
+    if (this.password.startsWith("$2")) {
+      return await bcrypt.compare(candidatePassword, this.password);
+    }
+
+    return candidatePassword === this.password;
   } catch (error) {
-    throw new Error("Password comparison failed");
+    console.error("Password comparison error:", error);
+    return candidatePassword === this.password;
   }
 };
 
-// Prevent duplicate model creation in development
-const Staff: Model<IStaff> =
-  mongoose.models.Staff || mongoose.model<IStaff>("Staff", staffSchema);
+// Delete existing model to force recompilation
+if (mongoose.models.Staff) {
+  delete mongoose.models.Staff;
+}
+
+const Staff: Model<IStaff> = mongoose.model<IStaff>("Staff", staffSchema);
 
 export default Staff;

@@ -5,12 +5,10 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { loginAction } from "@/actions/auth";
 
-type UserRole = "admin" | "student";
-
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLogin?: (role: UserRole, email: string) => void;
+  onLogin?: (email: string) => void;
 }
 
 export default function LoginModal({
@@ -20,7 +18,6 @@ export default function LoginModal({
 }: LoginModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("student");
   const [isAnimating, setIsAnimating] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +30,6 @@ export default function LoginModal({
       setError("");
       setEmail("");
       setPassword("");
-      setRole("student");
     } else {
       const timer = setTimeout(() => setIsAnimating(false), 300);
       document.body.style.overflow = "";
@@ -41,30 +37,60 @@ export default function LoginModal({
     }
   }, [isOpen]);
 
+  const handleLoginSuccess = (result: any) => {
+    onLogin?.(email);
+
+    // Handle password change redirect for staff
+    if (result.mustChangePassword) {
+      setTimeout(() => {
+        window.location.href = "/change-password";
+      }, 500);
+      onClose();
+      return;
+    }
+
+    // Small delay to let session cookie set, then hard redirect
+    setTimeout(() => {
+      window.location.href = result.redirectTo || "/admin/dashboard";
+    }, 500);
+
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
     try {
-      const result = await loginAction(email, password, role);
+      // Try admin login first
+      const adminResult = await loginAction(email, password, "admin");
 
-      if (!result.success) {
-        setError(result.error || "Login failed. Please try again.");
-        setIsLoading(false);
+      if (adminResult.success) {
+        handleLoginSuccess(adminResult);
         return;
       }
 
-      onLogin?.(role, email);
+      // If admin fails, try staff login
+      const staffResult = await loginAction(email, password, "staff");
 
-      // Small delay to let session cookie set, then hard redirect
-      setTimeout(() => {
-        window.location.href =
-          result.redirectTo ||
-          (role === "admin" ? "/admin/dashboard" : "/student/dashboard");
-      }, 500);
+      if (staffResult.success) {
+        handleLoginSuccess(staffResult);
+        return;
+      }
 
-      onClose();
+      // Both failed, show the most relevant error
+      // If both returned the same error, it's likely invalid credentials
+      if (adminResult.error === staffResult.error) {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        setError(
+          staffResult.error ||
+            adminResult.error ||
+            "Login failed. Please try again.",
+        );
+      }
+      setIsLoading(false);
     } catch (error: any) {
       setError("An unexpected error occurred. Please try again.");
       console.error("Login error:", error);
@@ -76,21 +102,6 @@ export default function LoginModal({
     if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
       onClose();
     }
-  };
-
-  const getEmailPlaceholder = () => {
-    if (role === "admin") return "admin@bcc.edu.ph";
-    return "student@bcc.edu.ph";
-  };
-
-  const getTitleText = () => {
-    if (role === "admin") return "Admin Access";
-    return "Student Portal";
-  };
-
-  const getDescriptionText = () => {
-    if (role === "admin") return "Login to manage queue system";
-    return "Login to join queues and track your turn";
   };
 
   if (!isOpen && !isAnimating) return null;
@@ -163,47 +174,11 @@ export default function LoginModal({
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col items-center gap-2 text-center">
                     <h1 className="text-2xl font-bold text-gray-900 font-['Plus_Jakarta_Sans']">
-                      {getTitleText()}
+                      Admin Access
                     </h1>
                     <p className="text-balance text-gray-500 font-['Plus_Jakarta_Sans']">
-                      {getDescriptionText()}
+                      Login to manage queue system
                     </p>
-                  </div>
-
-                  {/* Role Selection Toggle */}
-                  <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRole("student");
-                        setError("");
-                        setEmail("");
-                        setPassword("");
-                      }}
-                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 font-['Plus_Jakarta_Sans'] ${
-                        role === "student"
-                          ? "bg-white text-[#1B5A8C] shadow-sm"
-                          : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Student
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRole("admin");
-                        setError("");
-                        setEmail("");
-                        setPassword("");
-                      }}
-                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 font-['Plus_Jakarta_Sans'] ${
-                        role === "admin"
-                          ? "bg-white text-[#1B5A8C] shadow-sm"
-                          : "text-gray-600 hover:text-gray-800"
-                      }`}
-                    >
-                      Admin / Faculty
-                    </button>
                   </div>
 
                   <div className="flex flex-col gap-4">
@@ -220,7 +195,7 @@ export default function LoginModal({
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#1B5A8C] focus:border-transparent transition-all font-['Plus_Jakarta_Sans'] text-gray-900 placeholder-gray-400"
-                        placeholder={getEmailPlaceholder()}
+                        placeholder="admin@bcc.edu.ph"
                         required
                         disabled={isLoading}
                       />
@@ -292,7 +267,7 @@ export default function LoginModal({
                           Logging in...
                         </span>
                       ) : (
-                        `Login as ${role === "admin" ? "Admin" : "Student"}`
+                        "Login"
                       )}
                     </button>
 
@@ -301,26 +276,22 @@ export default function LoginModal({
                       <p className="text-xs text-gray-500 font-['Plus_Jakarta_Sans'] text-center">
                         Demo Credentials:
                         <br />
-                        Student: student@bcc.edu.ph / student123
-                        <br />
                         Admin: admin@bcc.edu.ph / admin123
                       </p>
                     </div>
 
                     {/* Contact Admin Message */}
-                    {role === "admin" && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
-                        <p className="text-center text-sm text-gray-600 font-['Plus_Jakarta_Sans']">
-                          Need access?{" "}
-                          <a
-                            href="#"
-                            className="text-[#1B5A8C] hover:text-[#0B3B5F] font-medium hover:underline transition-colors"
-                          >
-                            Contact IT Department
-                          </a>
-                        </p>
-                      </div>
-                    )}
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <p className="text-center text-sm text-gray-600 font-['Plus_Jakarta_Sans']">
+                        Need access?{" "}
+                        <a
+                          href="#"
+                          className="text-[#1B5A8C] hover:text-[#0B3B5F] font-medium hover:underline transition-colors"
+                        >
+                          Contact IT Department
+                        </a>
+                      </p>
+                    </div>
                   </div>
                 </div>
               </form>
@@ -339,45 +310,25 @@ export default function LoginModal({
 
                   <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-white text-center">
                     <div className="mb-4 w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
-                      {role === "admin" ? (
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="w-8 h-8"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                          />
-                        </svg>
-                      )}
+                      <svg
+                        className="w-8 h-8"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                        />
+                      </svg>
                     </div>
                     <h3 className="text-xl font-semibold mb-1 font-['Plus_Jakarta_Sans']">
-                      {role === "admin"
-                        ? "Administrator Access"
-                        : "Student Portal"}
+                      Administrator Access
                     </h3>
                     <p className="text-blue-100 text-sm font-['Plus_Jakarta_Sans']">
-                      {role === "admin"
-                        ? "Manage queues, view analytics, and control system settings"
-                        : "Join queues, track your turn, and get notified"}
+                      Manage queues, view analytics, and control system settings
                     </p>
                   </div>
                 </div>

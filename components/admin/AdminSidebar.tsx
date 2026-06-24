@@ -3,12 +3,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -26,29 +25,24 @@ import {
   LogOut,
   Menu,
   Bell,
-  FileText,
-  ScrollText,
-  GraduationCap,
-  UserPlus,
-  Shield,
-  Activity,
-  Monitor,
-  UserCog,
   ListChecks,
-  Receipt,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 interface AdminSidebarProps {
   user: {
     name?: string | null;
     email?: string | null;
+    role?: string;
+    staffRole?: string;
+    staffId?: string;
+    facultyId?: string;
   };
 }
 
-const menuItems = [
+// Admin menu items - Queue Management is now a single page with tabs
+const adminMenuItems = [
   {
     title: "Dashboard",
     icon: LayoutDashboard,
@@ -58,57 +52,18 @@ const menuItems = [
     title: "Queue Management",
     icon: Clock,
     href: "/admin/queue",
-    items: [
-      { title: "Active Queue", href: "/admin/queue/active", icon: Users },
-      { title: "Serve Ticket", href: "/admin/queue/serve", icon: Ticket },
-      { title: "All Tickets", href: "/admin/queue/all", icon: ListChecks },
-    ],
-  },
-  {
-    title: "Ticket Requests",
-    icon: FileText,
-    href: "/admin/tickets",
-    items: [
-      {
-        title: "Certificate",
-        href: "/admin/tickets/certificate",
-        icon: ScrollText,
-      },
-      { title: "TOR", href: "/admin/tickets/tor", icon: GraduationCap },
-      { title: "Grades", href: "/admin/tickets/grades", icon: BarChart3 },
-      { title: "Assessment", href: "/admin/tickets/assessment", icon: Receipt },
-    ],
   },
   {
     title: "User Management",
-    icon: UserCog,
+    icon: Users,
     href: "/admin/users",
     items: [
       { title: "All Users", href: "/admin/users", icon: Users },
-      { title: "Create Account", href: "/admin/users/create", icon: UserPlus },
-      { title: "Staff Accounts", href: "/admin/users/staff", icon: Shield },
+      { title: "Staff Accounts", href: "/admin/users/staff", icon: Ticket },
       {
-        title: "Student Accounts",
-        href: "/admin/users/students",
-        icon: GraduationCap,
-      },
-    ],
-  },
-  {
-    title: "System Monitor",
-    icon: Monitor,
-    href: "/admin/monitor",
-    items: [
-      { title: "System Logs", href: "/admin/monitor/logs", icon: Activity },
-      {
-        title: "Queue Analytics",
-        href: "/admin/monitor/analytics",
-        icon: BarChart3,
-      },
-      {
-        title: "Performance",
-        href: "/admin/monitor/performance",
-        icon: Monitor,
+        title: "Create Account",
+        href: "/admin/users/create",
+        icon: ListChecks,
       },
     ],
   },
@@ -124,12 +79,150 @@ const menuItems = [
   },
 ];
 
+// Helper function to generate staff menu items with dynamic routes
+function getStaffMenuItems(role: string): any[] {
+  const basePath = `/staff/${role}`;
+
+  const menus: Record<string, any[]> = {
+    registrar: [
+      {
+        title: "Dashboard",
+        icon: LayoutDashboard,
+        href: `${basePath}/dashboard`,
+      },
+      {
+        title: "Queue Management",
+        icon: Clock,
+        href: `${basePath}/queue`,
+      },
+      {
+        title: "Reports",
+        icon: BarChart3,
+        href: `${basePath}/reports`,
+      },
+      {
+        title: "Settings",
+        icon: Settings,
+        href: `${basePath}/settings`,
+      },
+    ],
+    dean: [
+      {
+        title: "Dashboard",
+        icon: LayoutDashboard,
+        href: `${basePath}/dashboard`,
+      },
+      {
+        title: "Queue Management",
+        icon: Clock,
+        href: `${basePath}/queue`,
+      },
+      {
+        title: "Reports",
+        icon: BarChart3,
+        href: `${basePath}/reports`,
+      },
+      {
+        title: "Settings",
+        icon: Settings,
+        href: `${basePath}/settings`,
+      },
+    ],
+    dsdw: [
+      {
+        title: "Dashboard",
+        icon: LayoutDashboard,
+        href: `${basePath}/dashboard`,
+      },
+      {
+        title: "Queue Management",
+        icon: Clock,
+        href: `${basePath}/queue`,
+      },
+      {
+        title: "Reports",
+        icon: BarChart3,
+        href: `${basePath}/reports`,
+      },
+      {
+        title: "Settings",
+        icon: Settings,
+        href: `${basePath}/settings`,
+      },
+    ],
+    cashier: [
+      {
+        title: "Dashboard",
+        icon: LayoutDashboard,
+        href: `${basePath}/dashboard`,
+      },
+      {
+        title: "Queue Management",
+        icon: Clock,
+        href: `${basePath}/queue`,
+      },
+      {
+        title: "Reports",
+        icon: BarChart3,
+        href: `${basePath}/reports`,
+      },
+      {
+        title: "Settings",
+        icon: Settings,
+        href: `${basePath}/settings`,
+      },
+    ],
+  };
+
+  return (
+    menus[role] || [
+      {
+        title: "Dashboard",
+        icon: LayoutDashboard,
+        href: `${basePath}/dashboard`,
+      },
+      {
+        title: "Queue Management",
+        icon: Clock,
+        href: `${basePath}/queue`,
+      },
+      {
+        title: "Settings",
+        icon: Settings,
+        href: `${basePath}/settings`,
+      },
+    ]
+  );
+}
+
 export function AdminSidebar({ user }: AdminSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { update } = useSession();
+
+  // Determine if user is admin or staff
+  const isAdmin = user?.role === "1";
+  const staffRole = user?.staffRole || "";
+
+  // Get menu items based on role
+  let menuItems: any[];
+  let roleDisplayName: string;
+
+  if (isAdmin) {
+    menuItems = adminMenuItems;
+    roleDisplayName = "Admin";
+  } else {
+    menuItems = getStaffMenuItems(staffRole);
+    const roleNames: Record<string, string> = {
+      registrar: "Registrar",
+      dean: "Dean",
+      dsdw: "DSDW",
+      cashier: "Cashier",
+    };
+    roleDisplayName = roleNames[staffRole] || "Staff";
+  }
 
   const handleLogout = async () => {
     const result = await logoutAction();
@@ -184,7 +277,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                 className="text-sm font-bold truncate"
                 style={{ fontFamily: "var(--font-geist-sans)" }}
               >
-                BCC Admin
+                BCC {roleDisplayName}
               </h1>
               <p
                 className="text-xs text-white/60 truncate"
@@ -286,7 +379,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                     className="text-white text-xs"
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
-                    {user?.name?.charAt(0) || "A"}
+                    {user?.name?.charAt(0) || (isAdmin ? "A" : "S")}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
@@ -294,14 +387,22 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
                     className="text-sm font-medium truncate"
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
-                    {user?.name || "Admin"}
+                    {user?.name || (isAdmin ? "Admin" : "Staff")}
                   </p>
                   <p
                     className="text-xs text-white/60 truncate"
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
-                    {user?.email}
+                    {isAdmin ? user?.email : roleDisplayName}
                   </p>
+                  {!isAdmin && user?.facultyId && (
+                    <p
+                      className="text-xs text-white/40 truncate"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
+                    >
+                      ID: {user.facultyId}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
