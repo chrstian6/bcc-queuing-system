@@ -6,11 +6,18 @@ const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const publicRoutes = ["/", "/public/schedule", "/get-ticket", "/auth/error"];
+  const publicRoutes = [
+    "/",
+    "/public/schedule",
+    "/get-ticket",
+    "/auth/error",
+    "/live-queue",
+  ];
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + "/"),
   );
-  const isApiRoute = pathname.startsWith("/api/auth");
+  const isApiRoute =
+    pathname.startsWith("/api/auth") || pathname.startsWith("/api/public");
   const isStaticFile =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/images") ||

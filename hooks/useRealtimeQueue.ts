@@ -1,14 +1,14 @@
-// hooks/useRealtimeQueue.ts
+// hooks/useRealtimeQueue.ts - Final clean version
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface DepartmentQueue {
   department: string;
   displayName: string;
   serving: string | null;
   waiting: number;
-  color: string;
+  color?: string;
 }
 
 interface UseRealtimeQueueReturn {
@@ -19,81 +19,70 @@ interface UseRealtimeQueueReturn {
 }
 
 export function useRealtimeQueue(): UseRealtimeQueueReturn {
-  const [departments, setDepartments] = useState<DepartmentQueue[]>([]);
+  const [departments, setDepartments] = useState<DepartmentQueue[]>([
+    {
+      department: "registrar",
+      displayName: "Registrar",
+      serving: null,
+      waiting: 0,
+    },
+    {
+      department: "cashier",
+      displayName: "Cashier",
+      serving: null,
+      waiting: 0,
+    },
+  ]);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const connect = useCallback(() => {
-    // Close existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    const eventSource = new EventSource("/api/public/queue-stream");
-    eventSourceRef.current = eventSource;
-
-    eventSource.onopen = () => {
-      setIsConnected(true);
-      setError(null);
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.error) {
-          setError(data.error);
-          return;
-        }
-
-        if (data.departments) {
-          setDepartments((prev) => {
-            const prevStr = JSON.stringify(prev);
-            const newStr = JSON.stringify(data.departments);
-            if (prevStr === newStr) return prev;
-            return data.departments;
-          });
-          setLastUpdated(new Date(data.timestamp));
-        }
-      } catch (err) {
-        console.error("Error parsing SSE data:", err);
-      }
-    };
-
-    eventSource.onerror = () => {
-      setIsConnected(false);
-      eventSource.close();
-
-      // Reconnect after 3 seconds
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 3000);
-    };
-  }, []);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connect = () => {
+      if (!mountedRef.current) return;
+
+      const eventSource = new EventSource("/api/public/queue-stream-full");
+
+      eventSource.onopen = () => {
+        if (mountedRef.current) {
+          setIsConnected(true);
+          setError(null);
+        }
+      };
+
+      eventSource.onmessage = (event) => {
+        if (!mountedRef.current) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.departments && data.departments.length > 0) {
+            setDepartments(data.departments);
+            setLastUpdated(new Date(data.timestamp));
+          }
+        } catch (err) {
+          console.error("SSE parse error:", err);
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (!mountedRef.current) return;
+        setIsConnected(false);
+        eventSource.close();
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(connect, 5000);
+      };
+    };
+
     connect();
 
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      mountedRef.current = false;
+      clearTimeout(reconnectTimeout);
     };
-  }, [connect]);
+  }, []);
 
-  return {
-    departments,
-    isConnected,
-    lastUpdated,
-    error,
-  };
+  return { departments, isConnected, lastUpdated, error };
 }

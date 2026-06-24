@@ -337,6 +337,7 @@ function ScheduleContent() {
     return (
       <div
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white flex items-center justify-center`}
+        style={{ fontFamily: "var(--font-geist-sans)" }}
       >
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -355,6 +356,7 @@ function ScheduleContent() {
   return (
     <div
       className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-white`}
+      style={{ fontFamily: "var(--font-geist-sans)" }}
     >
       <Header onLoginClick={() => console.log("Login clicked")} />
       <div className="pt-24 pb-16">
@@ -444,7 +446,6 @@ function ScheduleContent() {
               )}
 
               <div className="space-y-4">
-                {/* School ID */}
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                     School ID <span className="text-red-500">*</span>
@@ -465,7 +466,6 @@ function ScheduleContent() {
                   )}
                 </div>
 
-                {/* Name Fields */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm font-medium text-gray-700 mb-1.5 block">
@@ -564,7 +564,6 @@ function ScheduleContent() {
                   </div>
                 </div>
 
-                {/* Year & Section */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm font-medium text-gray-700 mb-1.5 block">
@@ -632,7 +631,6 @@ function ScheduleContent() {
                   </div>
                 </div>
 
-                {/* Contact Info */}
                 {!isGuardian && (
                   <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
                     <h3 className="text-sm font-semibold text-[#1B5A8C]">
@@ -700,7 +698,6 @@ function ScheduleContent() {
                   </div>
                 )}
 
-                {/* Guardian Checkbox */}
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                   <div className="flex items-start gap-2.5">
                     <Checkbox
@@ -726,7 +723,6 @@ function ScheduleContent() {
                   </div>
                 </div>
 
-                {/* Guardian Fields */}
                 {isGuardian && (
                   <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
                     <h3 className="text-sm font-semibold text-[#1B5A8C]">

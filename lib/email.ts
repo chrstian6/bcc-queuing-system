@@ -20,6 +20,8 @@ interface TicketNotificationData {
   ticketId: string;
   transactionType: string;
   queuePosition?: number;
+  notificationType?: "created" | "serving" | "next" | "reminder";
+  staffName?: string;
 }
 
 interface EmailTemplateConfig {
@@ -93,66 +95,37 @@ function getEmailTemplate(config: EmailTemplateConfig): string {
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #fafafa;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-
         <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="520" style="max-width: 520px; width: 100%;">
-
           <tr>
             <td align="center" style="padding-bottom: 32px;">
               <span style="font-size: 11px; color: #a0a0a0; text-transform: uppercase; letter-spacing: 2px;">Binalbagan Catholic College</span>
             </td>
           </tr>
-
           <tr>
             <td style="background-color: #ffffff; border-radius: 12px; padding: 48px 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
-
-              <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center; line-height: 1.3;">
-                ${title}
-              </h2>
-
-              ${
-                subtitle
-                  ? `
-              <p style="margin: 0 0 32px 0; font-size: 13px; color: #888888; text-align: center; line-height: 1.5;">
-                ${subtitle}
-              </p>
-              `
-                  : ""
-              }
-
-              <div style="margin-bottom: ${actionUrl ? "32px" : "0"};">
-                ${content}
-              </div>
-
+              <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center; line-height: 1.3;">${title}</h2>
+              ${subtitle ? `<p style="margin: 0 0 32px 0; font-size: 13px; color: #888888; text-align: center; line-height: 1.5;">${subtitle}</p>` : ""}
+              <div style="margin-bottom: ${actionUrl ? "32px" : "0"};">${content}</div>
               ${
                 actionUrl && actionLabel
                   ? `
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                 <tr>
                   <td align="center">
-                    <a href="${actionUrl}" style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: center;">
-                      ${actionLabel}
-                    </a>
+                    <a href="${actionUrl}" style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: center;">${actionLabel}</a>
                   </td>
                 </tr>
-              </table>
-              `
+              </table>`
                   : ""
               }
-
             </td>
           </tr>
-
           <tr>
             <td align="center" style="padding-top: 24px;">
-              <p style="margin: 0 0 4px 0; font-size: 11px; color: #c0c0c0; line-height: 1.5;">
-                ${footerNote || "This is an automated message from BCC Queue System."}
-              </p>
-              <p style="margin: 0; font-size: 11px; color: #c0c0c0;">
-                © ${currentYear} Binalbagan Catholic College Inc.
-              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #c0c0c0; line-height: 1.5;">${footerNote || "This is an automated message from BCC Queue System."}</p>
+              <p style="margin: 0; font-size: 11px; color: #c0c0c0;">© ${currentYear} Binalbagan Catholic College Inc.</p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
@@ -169,46 +142,53 @@ function buildWelcomeContent(data: WelcomeEmailData): string {
   const roleLabel = roleLabels[data.roleName] || data.roleName;
 
   return `
-    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
-      Your staff account has been created.
-    </p>
-
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">Your staff account has been created.</p>
     <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; margin-bottom: 8px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Staff ID</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.staffId}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Role</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${roleLabel}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Email</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.email}</td>
-        </tr>
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Temp Password</td>
-          <td style="padding: 6px 0; font-size: 13px; font-weight: 500; text-align: right;">
-            <code style="font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace; font-size: 13px; color: #1a1a1a; background: #eeeeee; padding: 3px 10px; border-radius: 4px;">${data.tempPassword}</code>
-          </td>
-        </tr>
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Staff ID</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.staffId}</td></tr>
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888;">Role</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${roleLabel}</td></tr>
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888;">Email</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.email}</td></tr>
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888;">Temp Password</td><td style="padding: 6px 0; font-size: 13px; font-weight: 500; text-align: right;"><code style="font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace; font-size: 13px; color: #1a1a1a; background: #eeeeee; padding: 3px 10px; border-radius: 4px;">${data.tempPassword}</code></td></tr>
       </table>
     </div>
-
-    <p style="margin: 24px 0 0 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">
-      Please change your password immediately after logging in.
-    </p>`;
+    <p style="margin: 24px 0 0 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">Please change your password immediately after logging in.</p>`;
 }
 
 function buildTicketContent(data: TicketNotificationData): string {
   const transactionLabel =
     transactionLabels[data.transactionType] || data.transactionType;
 
+  // Determine message based on notification type
+  let headerMessage = "";
+  let headerSubtext = "";
+
+  switch (data.notificationType) {
+    case "serving":
+      headerMessage = "You're now being served!";
+      headerSubtext = data.staffName
+        ? `${data.staffName} is now assisting you. Please proceed to the counter.`
+        : "Please proceed to the counter.";
+      break;
+    case "next":
+      headerMessage = "You're next in line!";
+      headerSubtext = data.staffName
+        ? `${data.staffName} will serve you shortly. Please get ready.`
+        : "Please get ready. You'll be called shortly.";
+      break;
+    case "reminder":
+      headerMessage = "Get ready!";
+      headerSubtext = data.staffName
+        ? `You're second in line. ${data.staffName} will serve you soon.`
+        : "You're second in line. Please prepare your documents.";
+      break;
+    default:
+      headerMessage = "Your ticket has been created!";
+      headerSubtext = "We'll notify you when it's your turn.";
+  }
+
   return `
-    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
-      Your ticket has been created successfully.
-    </p>
+    <p style="margin: 0 0 8px 0; font-size: 18px; font-weight: 600; color: #1a1a1a; text-align: center;">${headerMessage}</p>
+    <p style="margin: 0 0 24px 0; font-size: 13px; color: #666666; line-height: 1.5; text-align: center;">${headerSubtext}</p>
 
     <div style="text-align: center; margin-bottom: 24px;">
       <p style="margin: 0 0 4px 0; font-size: 10px; color: #aaaaaa; text-transform: uppercase; letter-spacing: 1.5px;">Ticket Number</p>
@@ -218,24 +198,9 @@ function buildTicketContent(data: TicketNotificationData): string {
 
     <div style="background-color: #f9f9f9; border-radius: 8px; padding: 24px; margin-bottom: 8px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Transaction</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${transactionLabel}</td>
-        </tr>
-        ${
-          data.queuePosition
-            ? `
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Queue Position</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">#${data.queuePosition}</td>
-        </tr>
-        `
-            : ""
-        }
-        <tr>
-          <td style="padding: 6px 0; font-size: 13px; color: #888888;">Student</td>
-          <td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.studentName}</td>
-        </tr>
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888; width: 40%;">Transaction</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${transactionLabel}</td></tr>
+        ${data.queuePosition ? `<tr><td style="padding: 6px 0; font-size: 13px; color: #888888;">Queue Position</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">#${data.queuePosition}</td></tr>` : ""}
+        <tr><td style="padding: 6px 0; font-size: 13px; color: #888888;">Student</td><td style="padding: 6px 0; font-size: 13px; color: #1a1a1a; font-weight: 500; text-align: right;">${data.studentName}</td></tr>
       </table>
     </div>`;
 }
@@ -245,13 +210,8 @@ function buildPasswordResetContent(
   resetUrl: string,
 ): string {
   return `
-    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">
-      Hello ${firstName},<br>you requested to reset your password.
-    </p>
-
-    <p style="margin: 0 0 8px 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">
-      This link will expire in 1 hour. If you did not request this, you can safely ignore this email.
-    </p>`;
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; line-height: 1.6; text-align: center;">Hello ${firstName},<br>you requested to reset your password.</p>
+    <p style="margin: 0 0 8px 0; font-size: 12px; color: #aaaaaa; text-align: center; line-height: 1.5;">This link will expire in 1 hour. If you did not request this, you can safely ignore this email.</p>`;
 }
 
 // ──────────────────────────────────────────────
@@ -261,11 +221,10 @@ function buildPasswordResetContent(
 function getWelcomePlainText(data: WelcomeEmailData): string {
   const roleLabel = roleLabels[data.roleName] || data.roleName;
   const loginUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
   return [
     `Welcome ${data.firstName}!`,
     ``,
-    `Your staff account has been created for the BCC Queue Management System.`,
+    `Your staff account has been created.`,
     ``,
     `Staff ID: ${data.staffId}`,
     `Role: ${roleLabel}`,
@@ -274,7 +233,7 @@ function getWelcomePlainText(data: WelcomeEmailData): string {
     ``,
     `Login here: ${loginUrl}`,
     ``,
-    `Please change your password immediately after logging in.`,
+    `Please change your password immediately.`,
     ``,
     `Binalbagan Catholic College Inc.`,
   ].join("\n");
@@ -284,18 +243,24 @@ function getTicketPlainText(data: TicketNotificationData): string {
   const transactionLabel =
     transactionLabels[data.transactionType] || data.transactionType;
 
+  let headerMessage = "Your queue ticket has been created.";
+  if (data.notificationType === "serving")
+    headerMessage = "You're now being served! Please proceed to the counter.";
+  else if (data.notificationType === "next")
+    headerMessage = "You're next in line! Please get ready.";
+  else if (data.notificationType === "reminder")
+    headerMessage = "Get ready! You're second in line.";
+
   return [
     `Hello ${data.studentName},`,
     ``,
-    `Your queue ticket has been created.`,
+    headerMessage,
     ``,
     `Ticket Number: ${data.ticketNumber}`,
     `Ticket ID: ${data.ticketId}`,
     `Transaction: ${transactionLabel}`,
     data.queuePosition ? `Queue Position: #${data.queuePosition}` : "",
     `Student: ${data.studentName}`,
-    ``,
-    `Please keep this ticket number for reference.`,
     ``,
     `Binalbagan Catholic College Inc.`,
   ]
@@ -310,12 +275,9 @@ function getPasswordResetPlainText(
   return [
     `Hello ${firstName},`,
     ``,
-    `You requested to reset your password for the BCC Queue Management System.`,
+    `Reset your password: ${resetUrl}`,
     ``,
-    `Reset your password here: ${resetUrl}`,
-    ``,
-    `This link will expire in 1 hour.`,
-    `If you did not request this, please ignore this email.`,
+    `This link expires in 1 hour.`,
     ``,
     `Binalbagan Catholic College Inc.`,
   ].join("\n");
@@ -325,9 +287,6 @@ function getPasswordResetPlainText(
 // Email Sending Functions
 // ──────────────────────────────────────────────
 
-/**
- * Send welcome email to newly created staff accounts
- */
 export async function sendWelcomeEmail(
   data: WelcomeEmailData,
 ): Promise<boolean> {
@@ -335,7 +294,6 @@ export async function sendWelcomeEmail(
     const roleLabel = roleLabels[data.roleName] || data.roleName;
     const loginUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
     const { from, senderDomain } = getSenderConfig();
-
     await transporter.sendMail({
       from,
       to: data.email,
@@ -355,7 +313,6 @@ export async function sendWelcomeEmail(
         "List-Unsubscribe": `<mailto:${process.env.SMTP_USER}?subject=unsubscribe>`,
       },
     });
-
     console.log(`Welcome email sent to ${data.email}`);
     return true;
   } catch (error) {
@@ -364,9 +321,6 @@ export async function sendWelcomeEmail(
   }
 }
 
-/**
- * Send ticket notification email to students/guardians
- */
 export async function sendTicketNotificationEmail(
   data: TicketNotificationData,
 ): Promise<boolean> {
@@ -375,16 +329,24 @@ export async function sendTicketNotificationEmail(
       transactionLabels[data.transactionType] || data.transactionType;
     const { from, senderDomain } = getSenderConfig();
 
-    const mailOptions = {
+    // Dynamic subject based on notification type
+    let subject = `Ticket #${data.ticketNumber} - ${transactionLabel}`;
+    if (data.notificationType === "serving")
+      subject = `Now Serving: Ticket #${data.ticketNumber} - ${transactionLabel}`;
+    else if (data.notificationType === "next")
+      subject = `You're Next: Ticket #${data.ticketNumber} - ${transactionLabel}`;
+    else if (data.notificationType === "reminder")
+      subject = `Get Ready: Ticket #${data.ticketNumber} - ${transactionLabel}`;
+
+    const info = await transporter.sendMail({
       from,
       to: data.email,
-      subject: `Ticket #${data.ticketNumber} - ${transactionLabel}`,
+      subject,
       html: getEmailTemplate({
         title: `Hello, ${data.studentName}`,
         subtitle: transactionLabel,
         content: buildTicketContent(data),
-        footerNote:
-          "Please keep this ticket for reference. We'll notify you when it's your turn.",
+        footerNote: "Please keep this ticket for reference.",
       }),
       text: getTicketPlainText(data),
       headers: {
@@ -393,9 +355,7 @@ export async function sendTicketNotificationEmail(
         "Message-ID": getMessageId(senderDomain),
         "List-Unsubscribe": `<mailto:${process.env.SMTP_USER}?subject=unsubscribe>`,
       },
-    };
-
-    const info = await transporter.sendMail(mailOptions);
+    });
     console.log(
       `Ticket email sent to ${data.email} (#${data.ticketNumber}), MessageID: ${info.messageId}`,
     );
@@ -409,9 +369,6 @@ export async function sendTicketNotificationEmail(
   }
 }
 
-/**
- * Send password reset email
- */
 export async function sendPasswordResetEmail(
   email: string,
   firstName: string,
@@ -420,7 +377,6 @@ export async function sendPasswordResetEmail(
   try {
     const resetUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
     const { from, senderDomain } = getSenderConfig();
-
     await transporter.sendMail({
       from,
       to: email,
@@ -440,7 +396,6 @@ export async function sendPasswordResetEmail(
         "Message-ID": getMessageId(senderDomain),
       },
     });
-
     console.log(`Password reset email sent to ${email}`);
     return true;
   } catch (error) {

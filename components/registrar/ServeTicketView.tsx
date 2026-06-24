@@ -5,13 +5,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle,
-  XCircle,
-  ArrowRight,
-  Clock,
   Pause,
   Play,
   SkipForward,
   Timer,
+  FastForward,
+  Clock,
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
 import {
@@ -20,6 +19,10 @@ import {
   completeServedTicket,
   cancelTicket,
 } from "@/actions/ticket";
+import {
+  notifyNowServing,
+  notifyNextTwoInLine,
+} from "@/actions/ticket-notification";
 
 interface Student {
   firstName?: string;
@@ -35,12 +38,14 @@ interface Ticket {
   status: "pending" | "serving" | "completed" | "cancelled" | string;
   servedBy?: string;
   servedAt?: string;
+  createdAt?: string;
   transactionType?: string;
   student?: Student;
 }
 
 interface SessionUser {
   staffId?: string;
+  name?: string;
   [key: string]: unknown;
 }
 
@@ -59,6 +64,64 @@ function formatElapsedTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+// Inline skeleton for serve view
+function ServeSkeleton() {
+  return (
+    <div className="animate-pulse" style={FONT}>
+      <div className="flex items-center justify-between pb-3 mb-1">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-20 bg-gray-100 rounded-full" />
+          <div className="h-5 w-40 bg-gray-100 rounded-full" />
+        </div>
+        <div className="h-5 w-14 bg-gray-100 rounded-full" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-5 lg:divide-x divide-gray-100">
+        <div className="lg:col-span-3 py-6 lg:pr-8">
+          <div className="h-3 w-20 bg-gray-100 rounded-full mb-4" />
+          <div className="space-y-6">
+            <div className="mb-6">
+              <div className="h-5 w-48 bg-gray-100 rounded-full mb-2" />
+              <div className="h-4 w-32 bg-gray-100 rounded-full" />
+            </div>
+            <div className="space-y-2.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between py-2.5 border-b border-gray-50"
+                >
+                  <div className="h-3 w-16 bg-gray-100 rounded-full" />
+                  <div className="h-3 w-20 bg-gray-100 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-5 mt-6 border-t border-gray-100">
+            <div className="h-8 w-16 bg-gray-100 rounded-full" />
+            <div className="flex-1" />
+            <div className="h-8 w-20 bg-gray-100 rounded-full" />
+            <div className="h-8 w-14 bg-gray-100 rounded-full" />
+            <div className="h-8 w-16 bg-gray-100 rounded-full" />
+          </div>
+        </div>
+        <div className="lg:col-span-2 py-6 lg:pl-8">
+          <div className="h-3 w-12 bg-gray-100 rounded-full mb-5" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 py-3">
+                <div className="h-9 w-9 bg-gray-100 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-4 w-36 bg-gray-100 rounded-full" />
+                  <div className="h-3 w-56 bg-gray-100 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ServeTicketView({ department }: ServeTicketViewProps) {
@@ -96,71 +159,81 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     [],
   );
 
-  const loadData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const sessionResult = await getSession();
-      if (!sessionResult.success || !sessionResult.session) {
-        router.push("/?error=unauthorized");
-        return;
-      }
-      const sessionUser = sessionResult.session.user as SessionUser;
-      setUser(sessionUser);
-      const staffId = sessionUser?.staffId;
-      if (!staffId) {
-        setIsLoading(false);
-        return;
-      }
-      const ticketsResult = await getStaffTickets(staffId);
-      if (ticketsResult?.success) {
-        const tickets: Ticket[] = ticketsResult.tickets;
-        const serving =
-          tickets.find(
-            (t) => t.status === "serving" && t.servedBy === staffId,
-          ) || null;
-        const waiting = tickets.filter((t) => t.status === "pending");
+  const loadData = useCallback(
+    async (silent = false) => {
+      try {
+        if (!silent) setIsLoading(true);
+        const sessionResult = await getSession();
+        if (!sessionResult.success || !sessionResult.session) {
+          router.push("/?error=unauthorized");
+          return;
+        }
+        const sessionUser = sessionResult.session.user as SessionUser;
+        setUser(sessionUser);
+        const staffId = sessionUser?.staffId;
+        if (!staffId) {
+          setIsLoading(false);
+          return;
+        }
+        const ticketsResult = await getStaffTickets(staffId);
+        if (ticketsResult?.success) {
+          const tickets: Ticket[] = ticketsResult.tickets;
+          const serving =
+            tickets.find(
+              (t) => t.status === "serving" && t.servedBy === staffId,
+            ) || null;
 
-        if (
-          waiting.length > previousWaitingLengthRef.current &&
-          previousWaitingLengthRef.current > 0
-        ) {
-          const newTicket = waiting[waiting.length - 1];
-          if (newTicket) {
-            setAnimatingTicket(newTicket._id);
-            setTimeout(() => setAnimatingTicket(null), 600);
+          const waiting = tickets
+            .filter((t) => t.status === "pending")
+            .sort((a, b) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateA - dateB;
+            });
+
+          if (
+            waiting.length > previousWaitingLengthRef.current &&
+            previousWaitingLengthRef.current > 0
+          ) {
+            const newTicket = waiting[waiting.length - 1];
+            if (newTicket) {
+              setAnimatingTicket(newTicket._id);
+              setTimeout(() => setAnimatingTicket(null), 600);
+            }
+          }
+
+          if (
+            serving &&
+            (!previousCurrentTicketRef.current ||
+              previousCurrentTicketRef.current._id !== serving._id)
+          ) {
+            setAnimatingTicket(serving._id);
+            setTimeout(() => setAnimatingTicket(null), 500);
+          }
+
+          previousWaitingLengthRef.current = waiting.length;
+          previousCurrentTicketRef.current = serving;
+          setWaitingTickets(waiting);
+          setCurrentTicket(serving);
+
+          if (serving?.servedAt) {
+            setElapsedSeconds(
+              Math.floor(
+                (Date.now() - new Date(serving.servedAt).getTime()) / 1000,
+              ),
+            );
+          } else {
+            setElapsedSeconds(0);
           }
         }
-
-        if (
-          serving &&
-          (!previousCurrentTicketRef.current ||
-            previousCurrentTicketRef.current._id !== serving._id)
-        ) {
-          setAnimatingTicket(serving._id);
-          setTimeout(() => setAnimatingTicket(null), 500);
-        }
-
-        previousWaitingLengthRef.current = waiting.length;
-        previousCurrentTicketRef.current = serving;
-        setWaitingTickets(waiting);
-        setCurrentTicket(serving);
-
-        if (serving?.servedAt) {
-          setElapsedSeconds(
-            Math.floor(
-              (Date.now() - new Date(serving.servedAt).getTime()) / 1000,
-            ),
-          );
-        } else {
-          setElapsedSeconds(0);
-        }
+      } catch (err) {
+        console.error("Error loading:", err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Error loading:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [router]);
+    },
+    [router],
+  );
 
   useEffect(() => {
     loadData();
@@ -188,17 +261,58 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     }
   }, [currentTicket, isPaused]);
 
+  const autoServeNext = useCallback(async () => {
+    if (!user?.staffId) return;
+
+    const ticketsResult = await getStaffTickets(user.staffId);
+    if (!ticketsResult?.success) return;
+
+    const tickets: Ticket[] = ticketsResult.tickets;
+    const waiting = tickets
+      .filter((t) => t.status === "pending")
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateA - dateB;
+      });
+
+    if (waiting.length === 0) {
+      setCurrentTicket(null);
+      setWaitingTickets([]);
+      setElapsedSeconds(0);
+      previousCurrentTicketRef.current = null;
+      previousWaitingLengthRef.current = 0;
+      return;
+    }
+
+    const nextTicket = waiting[0];
+    const serveResult = await serveTicket(
+      nextTicket.ticketNumber,
+      user.staffId,
+    );
+
+    if (serveResult.success) {
+      notifyNowServing(nextTicket.ticketNumber, user?.name || undefined);
+      notifyNextTwoInLine(department, user?.name || undefined);
+      await loadData(true);
+      showMessage("success", `Now serving #${nextTicket.ticketNumber}`);
+    }
+  }, [user, department, loadData, showMessage]);
+
   const handleServeNext = async (ticketNumber: string) => {
     if (!user?.staffId) {
       showMessage("error", "Staff ID not found. Please login again.");
       return;
     }
+    setError("");
+    setSuccess("");
     setIsProcessing(true);
     try {
       const result = await serveTicket(ticketNumber, user.staffId);
       if (result.success) {
+        notifyNowServing(ticketNumber, user?.name || undefined);
+        await loadData(true);
         showMessage("success", `Now serving ticket #${ticketNumber}`);
-        await loadData();
       } else {
         showMessage("error", result.error || "Failed to serve ticket");
       }
@@ -215,101 +329,40 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       return;
     }
 
-    setIsProcessing(true);
+    if (!currentTicket && waitingTickets.length === 0) {
+      showMessage("error", "No tickets in queue");
+      return;
+    }
 
+    if (!currentTicket && waitingTickets.length > 0) {
+      await handleServeNext(waitingTickets[0].ticketNumber);
+      return;
+    }
+
+    setIsProcessing(true);
     try {
       if (currentTicket) {
-        const completeResult = await completeServedTicket(
-          currentTicket.ticketNumber,
-          user.staffId,
-        );
-        if (!completeResult.success) {
-          showMessage(
-            "error",
-            completeResult.error || "Failed to complete current ticket",
-          );
-          setIsProcessing(false);
-          return;
-        }
+        await completeServedTicket(currentTicket.ticketNumber, user.staffId);
       }
-
-      const ticketsResult = await getStaffTickets(user.staffId);
-      if (!ticketsResult?.success) {
-        showMessage("error", "Failed to load queue");
-        setIsProcessing(false);
-        return;
-      }
-
-      const tickets: Ticket[] = ticketsResult.tickets;
-      const waiting = tickets.filter((t) => t.status === "pending");
-      const serving =
-        tickets.find(
-          (t) => t.status === "serving" && t.servedBy === user.staffId,
-        ) || null;
-
-      if (waiting.length === 0) {
-        setCurrentTicket(serving);
-        setWaitingTickets([]);
-        setElapsedSeconds(0);
-        previousCurrentTicketRef.current = serving;
-        previousWaitingLengthRef.current = 0;
-        showMessage(
-          "success",
-          serving
-            ? "Current ticket still active"
-            : "All tickets completed! Queue is empty.",
-        );
-        setIsProcessing(false);
-        return;
-      }
-
-      const nextTicket = waiting[0];
-      const serveResult = await serveTicket(
-        nextTicket.ticketNumber,
-        user.staffId,
-      );
-
-      if (serveResult.success) {
-        const updatedTicketsResult = await getStaffTickets(user.staffId);
-        if (updatedTicketsResult?.success) {
-          const updatedTickets: Ticket[] = updatedTicketsResult.tickets;
-          const updatedServing =
-            updatedTickets.find(
-              (t) => t.status === "serving" && t.servedBy === user.staffId,
-            ) || null;
-          const updatedWaiting = updatedTickets.filter(
-            (t) => t.status === "pending",
-          );
-
-          if (updatedServing) {
-            setAnimatingTicket(updatedServing._id);
-            setTimeout(() => setAnimatingTicket(null), 500);
-          }
-
-          previousCurrentTicketRef.current = updatedServing;
-          previousWaitingLengthRef.current = updatedWaiting.length;
-          setCurrentTicket(updatedServing);
-          setWaitingTickets(updatedWaiting);
-
-          if (updatedServing?.servedAt) {
-            setElapsedSeconds(
-              Math.floor(
-                (Date.now() - new Date(updatedServing.servedAt).getTime()) /
-                  1000,
-              ),
-            );
-          }
-        }
-
-        showMessage("success", `Now serving #${nextTicket.ticketNumber}`);
-      } else {
-        showMessage(
-          "error",
-          serveResult.error || "Failed to serve next ticket",
-        );
-      }
+      await autoServeNext();
     } catch (err) {
       console.error("Error in handleServeFirstInQueue:", err);
+      showMessage("error", "An error occurred");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    if (!user?.staffId || !currentTicket) return;
+
+    setIsProcessing(true);
+    try {
+      await cancelTicket(currentTicket.ticketNumber);
+      await autoServeNext();
+      showMessage("success", `Skipped #${currentTicket.ticketNumber}`);
+    } catch (err) {
+      console.error("Error in handleSkip:", err);
       showMessage("error", "An error occurred");
     } finally {
       setIsProcessing(false);
@@ -329,7 +382,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           "success",
           `Ticket #${currentTicket.ticketNumber} completed`,
         );
-        await loadData();
+        await loadData(true);
       } else {
         showMessage("error", result.error || "Failed to complete ticket");
       }
@@ -340,35 +393,11 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     }
   };
 
-  const handleCancel = async () => {
-    if (!currentTicket) return;
-    setIsProcessing(true);
-    try {
-      const result = await cancelTicket(currentTicket.ticketNumber);
-      if (result.success) {
-        showMessage(
-          "success",
-          `Ticket #${currentTicket.ticketNumber} cancelled`,
-        );
-        await loadData();
-      } else {
-        showMessage("error", result.error || "Failed to cancel ticket");
-      }
-    } catch {
-      showMessage("error", "An error occurred");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const togglePause = () => setIsPaused((prev) => !prev);
 
+  // Show skeleton while loading
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-[#1B5A8C] rounded-full animate-spin" />
-      </div>
-    );
+    return <ServeSkeleton />;
   }
 
   return (
@@ -395,13 +424,12 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           )}
           {isPaused && (
             <span className="flex items-center gap-1 text-amber-600 font-medium">
-              <Pause className="w-3 h-3" />
-              Paused
+              <Pause className="w-3 h-3" /> Paused
             </span>
           )}
         </div>
         <button
-          onClick={loadData}
+          onClick={() => loadData(true)}
           className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
           style={FONT}
         >
@@ -445,7 +473,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
                 >
                   Now Serving
                 </p>
-
                 <div className="mb-6">
                   <h2
                     className="text-lg font-bold text-gray-900 mb-1"
@@ -458,7 +485,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
                     {formatTransactionType(currentTicket.transactionType)}
                   </p>
                 </div>
-
                 <div className="space-y-0">
                   <div className="flex items-center justify-between py-2.5 border-b border-gray-50">
                     <span className="text-xs text-gray-400" style={FONT}>
@@ -538,54 +564,71 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           )}
 
           {/* Controls */}
-          <div className="flex items-center gap-2 pt-5 mt-6 border-t border-gray-100">
-            <button
-              onClick={togglePause}
-              disabled={isProcessing}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all ${
-                isPaused
-                  ? "bg-amber-50 text-amber-600 border border-amber-200"
-                  : "text-gray-500 hover:bg-gray-50 border border-transparent"
-              }`}
+          <div className="pt-5 mt-6 border-t border-gray-100 space-y-3">
+            <p
+              className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
               style={FONT}
             >
-              {isPaused ? (
-                <Play className="w-3.5 h-3.5" />
-              ) : (
-                <Pause className="w-3.5 h-3.5" />
-              )}
-              {isPaused ? "Resume" : "Pause"}
-            </button>
-
-            <div className="flex-1" />
-
-            <button
-              onClick={handleComplete}
-              disabled={isProcessing || !currentTicket}
-              className="px-4 py-2 bg-[#1B5A8C] text-white text-xs font-semibold rounded-full hover:bg-[#154874] disabled:opacity-30 transition-all shadow-sm shadow-[#1B5A8C]/20"
-              style={FONT}
-            >
-              Complete
-            </button>
-
-            <button
-              onClick={handleCancel}
-              disabled={isProcessing || !currentTicket}
-              className="px-3 py-2 text-xs text-gray-500 hover:text-red-600 rounded-full disabled:opacity-30 transition-all"
-              style={FONT}
-            >
-              Cancel
-            </button>
-
-            <button
-              onClick={handleServeFirstInQueue}
-              disabled={isProcessing || isPaused || waitingTickets.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2 border border-[#1B5A8C]/30 text-xs font-semibold text-[#1B5A8C] rounded-full hover:bg-[#1B5A8C]/5 disabled:opacity-30 transition-all"
-              style={FONT}
-            >
-              Next
-              <SkipForward className="w-3.5 h-3.5" />
-            </button>
+              Controls
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={togglePause}
+                disabled={isProcessing}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium transition-all ${isPaused ? "bg-amber-50 text-amber-600 border border-amber-200" : "text-gray-500 hover:bg-gray-50 border border-transparent"}`}
+                style={FONT}
+              >
+                {isPaused ? (
+                  <Play className="w-3.5 h-3.5" />
+                ) : (
+                  <Pause className="w-3.5 h-3.5" />
+                )}
+                {isPaused ? "Resume" : "Pause"}
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={handleComplete}
+                disabled={isProcessing || !currentTicket}
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#1B5A8C] text-white text-xs font-semibold rounded-full hover:bg-[#154874] disabled:opacity-30 transition-all shadow-sm shadow-[#1B5A8C]/20"
+                style={FONT}
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+                Complete
+              </button>
+              <button
+                onClick={handleSkip}
+                disabled={isProcessing || !currentTicket}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-500 hover:text-orange-600 hover:bg-orange-50 rounded-full disabled:opacity-30 transition-all"
+                style={FONT}
+              >
+                <FastForward className="w-3.5 h-3.5" />
+                Skip
+              </button>
+              <button
+                onClick={handleServeFirstInQueue}
+                disabled={
+                  isProcessing ||
+                  isPaused ||
+                  (waitingTickets.length === 0 && !currentTicket)
+                }
+                className="flex items-center gap-1.5 px-4 py-2 border border-[#1B5A8C]/30 text-xs font-semibold text-[#1B5A8C] rounded-full hover:bg-[#1B5A8C]/5 disabled:opacity-30 transition-all"
+                style={FONT}
+              >
+                Next
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex gap-4 text-[10px] text-gray-400" style={FONT}>
+              <span className="flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" /> Complete
+              </span>
+              <span className="flex items-center gap-1">
+                <FastForward className="w-3 h-3" /> Skip
+              </span>
+              <span className="flex items-center gap-1">
+                <SkipForward className="w-3 h-3" /> Next
+              </span>
+            </div>
           </div>
         </div>
 
@@ -597,7 +640,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           >
             Queue
           </p>
-
           <div className="space-y-1">
             {waitingTickets.length === 0 ? (
               <p
@@ -610,11 +652,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
               waitingTickets.map((ticket) => (
                 <div
                   key={ticket._id}
-                  className={`group py-3 px-3 -mx-3 rounded-xl hover:bg-gray-50 transition-all ${
-                    animatingTicket === ticket._id
-                      ? "animate-in slide-in-from-right-4 fade-in duration-500 bg-[#1B5A8C]/5"
-                      : ""
-                  }`}
+                  className={`group py-3 px-3 -mx-3 rounded-xl hover:bg-gray-50 transition-all ${animatingTicket === ticket._id ? "animate-in slide-in-from-right-4 fade-in duration-500 bg-[#1B5A8C]/5" : ""}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -635,12 +673,8 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
                           className="text-xs text-gray-500 mt-0.5 truncate"
                           style={FONT}
                         >
-                          {formatTransactionType(ticket.transactionType)}
-                          {" · "}
-                          {ticket.student?.schoolId}
-                          {" · "}
-                          {ticket.student?.year}
-                          {" · "}
+                          {formatTransactionType(ticket.transactionType)} ·{" "}
+                          {ticket.student?.schoolId} · {ticket.student?.year} ·
                           Sec {ticket.student?.section}
                         </p>
                       </div>
