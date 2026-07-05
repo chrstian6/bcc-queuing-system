@@ -13,6 +13,15 @@ export interface IUser extends Document {
   password: string;
   role: UserRole;
   name?: string;
+  // Student profile fields (role STUDENT only; admins leave them unset)
+  schoolId?: string;
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+  suffix?: string;
+  year?: string;
+  campus?: string;
+  contactNumber?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -44,6 +53,19 @@ const userSchema = new mongoose.Schema<IUser>(
       type: String,
       trim: true,
     },
+    // Student profile — sparse unique so admin docs without schoolId don't collide
+    schoolId: {
+      type: String,
+      trim: true,
+      index: { unique: true, sparse: true },
+    },
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    middleName: { type: String, trim: true, default: "" },
+    suffix: { type: String, trim: true, default: "" },
+    year: { type: String, trim: true },
+    campus: { type: String, trim: true },
+    contactNumber: { type: String, trim: true, default: "" },
   },
   {
     timestamps: true,

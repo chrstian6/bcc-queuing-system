@@ -11,6 +11,7 @@ import {
   Timer,
   FastForward,
   Clock,
+  Trash2,
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
 import {
@@ -22,7 +23,9 @@ import {
 import {
   notifyNowServing,
   notifyNextTwoInLine,
+  notifySkipped,
 } from "@/actions/ticket-notification";
+import { cancelPreviousDayTickets } from "@/actions/ticket-cleanup";
 
 interface Student {
   firstName?: string;
@@ -66,7 +69,6 @@ function formatElapsedTime(seconds: number) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-// Inline skeleton for serve view
 function ServeSkeleton() {
   return (
     <div className="animate-pulse" style={FONT}>
@@ -136,6 +138,8 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
   const [success, setSuccess] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [animatingTicket, setAnimatingTicket] = useState<string | null>(null);
+  const [hasPreviousDayTickets, setHasPreviousDayTickets] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const messageTimerRef = useRef<NodeJS.Timeout | null>(null);
   const previousWaitingLengthRef = useRef(0);
@@ -190,6 +194,15 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
               const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
               return dateA - dateB;
             });
+
+          // Check if there are tickets from previous days
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const hasOldTickets = waiting.some((t) => {
+            const ticketDate = t.createdAt ? new Date(t.createdAt) : new Date();
+            return ticketDate < today;
+          });
+          setHasPreviousDayTickets(hasOldTickets);
 
           if (
             waiting.length > previousWaitingLengthRef.current &&
@@ -260,6 +273,27 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       setElapsedSeconds(0);
     }
   }, [currentTicket, isPaused]);
+
+  const handleCleanupPreviousDay = async () => {
+    setIsCleaningUp(true);
+    try {
+      const result = await cancelPreviousDayTickets();
+      if (result.success) {
+        showMessage(
+          "success",
+          result.message || "Previous day tickets cancelled",
+        );
+        setHasPreviousDayTickets(false);
+        await loadData(true);
+      } else {
+        showMessage("error", result.error || "Failed to cancel tickets");
+      }
+    } catch {
+      showMessage("error", "An error occurred during cleanup");
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
 
   const autoServeNext = useCallback(async () => {
     if (!user?.staffId) return;
@@ -356,11 +390,13 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
   const handleSkip = async () => {
     if (!user?.staffId || !currentTicket) return;
 
+    const skippedTicketNumber = currentTicket.ticketNumber;
     setIsProcessing(true);
     try {
-      await cancelTicket(currentTicket.ticketNumber);
+      await cancelTicket(skippedTicketNumber);
+      notifySkipped(skippedTicketNumber, user?.name || undefined);
       await autoServeNext();
-      showMessage("success", `Skipped #${currentTicket.ticketNumber}`);
+      showMessage("success", `Skipped #${skippedTicketNumber}`);
     } catch (err) {
       console.error("Error in handleSkip:", err);
       showMessage("error", "An error occurred");
@@ -395,13 +431,40 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
 
   const togglePause = () => setIsPaused((prev) => !prev);
 
-  // Show skeleton while loading
   if (isLoading) {
     return <ServeSkeleton />;
   }
 
   return (
     <div>
+      {/* Previous Day Cleanup Banner */}
+      {hasPreviousDayTickets && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs text-amber-700" style={FONT}>
+              There are pending tickets from a previous day. Would you like to
+              cancel them?
+            </p>
+          </div>
+          <button
+            onClick={handleCleanupPreviousDay}
+            disabled={isCleaningUp}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-full hover:bg-amber-700 disabled:opacity-50 transition-all flex-shrink-0 ml-3"
+            style={FONT}
+          >
+            {isCleaningUp ? (
+              <>Clearing...</>
+            ) : (
+              <>
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear Old Queue
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="flex items-center justify-between pb-3 mb-1">
         <div
@@ -459,7 +522,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-5 lg:divide-x divide-gray-100">
-        {/* Now Serving */}
         <div className="lg:col-span-3 py-6 lg:pr-8">
           {currentTicket ? (
             <div
@@ -563,7 +625,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
             </div>
           )}
 
-          {/* Controls */}
           <div className="pt-5 mt-6 border-t border-gray-100 space-y-3">
             <p
               className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider"
@@ -632,7 +693,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           </div>
         </div>
 
-        {/* Queue */}
         <div className="lg:col-span-2 py-6 lg:pl-8">
           <p
             className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-5"

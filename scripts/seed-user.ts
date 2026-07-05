@@ -101,6 +101,14 @@ async function createUsers() {
     password: "student123",
     role: UserRole.STUDENT,
     name: "Student User",
+    schoolId: "123456",
+    firstName: "Student",
+    lastName: "User",
+    middleName: "",
+    suffix: "",
+    year: "1st Year",
+    campus: "Binalbagan Catholic College - Main Campus",
+    contactNumber: "",
   });
 
   await adminUser.save();

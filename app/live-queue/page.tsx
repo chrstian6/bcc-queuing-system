@@ -30,7 +30,6 @@ interface DataPoint {
   value: number;
 }
 
-// Sleek Thin Line Chart
 function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
   const maxValue = Math.max(...dataPoints.map((d) => d.value), 1);
   const paddedMax = Math.ceil(maxValue / 5) * 5 || 5;
@@ -44,7 +43,6 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
     const pad = 4;
     const cw = width - pad * 2;
     const ch = height - pad * 2;
-
     return dataPoints
       .map((point, i) => {
         const x = pad + (i / (dataPoints.length - 1)) * cw;
@@ -89,7 +87,6 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
           {currentValue}
         </span>
       </div>
-
       <div className="relative h-[100px]">
         <svg
           className="w-full h-full"
@@ -102,8 +99,6 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
               <stop offset="100%" stopColor="#1B5A8C" stopOpacity="0" />
             </linearGradient>
           </defs>
-
-          {/* Baseline */}
           <line
             x1="0"
             y1="96"
@@ -112,11 +107,7 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
             stroke="#f1f5f9"
             strokeWidth="1"
           />
-
-          {/* Area fill */}
           {areaPath && <path d={areaPath} fill="url(#sleekArea)" />}
-
-          {/* Main line - thin and sleek */}
           {pathData && (
             <path
               d={pathData}
@@ -127,8 +118,6 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
               strokeLinejoin="round"
             />
           )}
-
-          {/* End dot */}
           {dataPoints.length > 0 && !isNaN(lastY) && (
             <circle cx={lastX} cy={lastY} r="2" fill="#1B5A8C" />
           )}
@@ -138,7 +127,6 @@ function SleekChart({ dataPoints }: { dataPoints: DataPoint[] }) {
   );
 }
 
-// Voice configuration
 const VOICE_CONFIG = { rate: 0.95, pitch: 1.1, volume: 0.9 };
 
 function getBestVoice(): SpeechSynthesisVoice | null {
@@ -174,7 +162,6 @@ function speak(text: string) {
 function useVoiceAnnouncements(departments: DepartmentQueue[]) {
   const previousServingRef = useRef<Record<string, string | null>>({});
   const isInitializedRef = useRef(false);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.speechSynthesis.onvoiceschanged = () => getBestVoice();
@@ -184,7 +171,6 @@ function useVoiceAnnouncements(departments: DepartmentQueue[]) {
       setTimeout(() => speak("Queue monitor is active."), 1000);
     }
   }, []);
-
   useEffect(() => {
     if (departments.length === 0) return;
     departments.forEach((dept) => {
@@ -201,12 +187,20 @@ function useVoiceAnnouncements(departments: DepartmentQueue[]) {
   }, [departments]);
 }
 
+interface QueueStatusInfo {
+  status: "open" | "closed" | "outside-hours" | "full";
+  openCounters: number;
+  totalCounters: number;
+  message: string;
+}
+
 function LiveQueueContent() {
   const [departments, setDepartments] = useState<DepartmentQueue[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedDept, setSelectedDept] = useState<string>("all");
   const [history, setHistory] = useState<DataPoint[]>([]);
+  const [queueStatus, setQueueStatus] = useState<QueueStatusInfo | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -220,6 +214,9 @@ function LiveQueueContent() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        if (data.queueStatus) {
+          setQueueStatus(data.queueStatus);
+        }
         if (data.departments) {
           setDepartments(data.departments);
           setLastUpdated(new Date(data.timestamp));
@@ -281,7 +278,6 @@ function LiveQueueContent() {
     selectedDept === "all"
       ? allWaitingTickets
       : allWaitingTickets.filter((t) => t.department === selectedDept);
-
   const totalTickets = departments.reduce(
     (sum, d) => sum + d.waiting + (d.serving ? 1 : 0),
     0,
@@ -346,42 +342,73 @@ function LiveQueueContent() {
           </p>
         </div>
 
-        {/* Sleek Chart */}
+        {/* Queue availability banner */}
+        {queueStatus && (
+          <div
+            className={`px-6 py-3 border-b text-sm font-medium ${
+              queueStatus.status === "open"
+                ? "bg-green-50 border-green-100 text-green-700"
+                : queueStatus.status === "outside-hours"
+                  ? "bg-amber-50 border-amber-100 text-amber-700"
+                  : "bg-red-50 border-red-100 text-red-600"
+            }`}
+            style={FONT}
+            role="status"
+          >
+            <span className="inline-flex items-center gap-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  queueStatus.status === "open"
+                    ? "bg-green-500 animate-pulse"
+                    : queueStatus.status === "outside-hours"
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                }`}
+              />
+              {queueStatus.message ||
+                (queueStatus.status === "open" ? "Queue open" : "Queue closed")}
+            </span>
+          </div>
+        )}
+
         <div className="px-6 py-4 border-b border-gray-100">
           <SleekChart dataPoints={history} />
         </div>
 
-        {/* Now Serving */}
-        <div className="px-6 py-4 border-b border-gray-100">
-          <div className="grid grid-cols-2 gap-4">
+        {/* Now Serving - BIG NUMBERS */}
+        <div className="px-6 py-5 border-b border-gray-100">
+          <div className="grid grid-cols-2 gap-6">
             {departments.map((dept) => (
               <div key={dept.department}>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   <span
-                    className="text-[11px] font-medium text-gray-400 uppercase tracking-wider"
+                    className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
                     style={FONT}
                   >
                     {dept.displayName}
                   </span>
                 </div>
-                <div className="flex items-baseline gap-3">
+                <div className="flex items-baseline gap-4">
                   {dept.serving ? (
                     <span
-                      className="text-2xl font-extrabold text-gray-900 tabular-nums"
+                      className="text-4xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
                       style={FONT}
                     >
                       #{dept.serving}
                     </span>
                   ) : (
                     <span
-                      className="text-2xl font-extrabold text-gray-200"
+                      className="text-4xl font-extrabold text-gray-200 tracking-tight"
                       style={FONT}
                     >
                       —
                     </span>
                   )}
-                  <span className="text-xs text-gray-400" style={FONT}>
+                  <span
+                    className="text-sm text-gray-400 font-medium"
+                    style={FONT}
+                  >
                     {dept.waiting} waiting
                   </span>
                 </div>
@@ -390,16 +417,11 @@ function LiveQueueContent() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="px-6 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSelectedDept("all")}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                selectedDept === "all"
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selectedDept === "all" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
               style={FONT}
             >
               All ({allWaitingTickets.length})
@@ -408,11 +430,7 @@ function LiveQueueContent() {
               <button
                 key={dept.department}
                 onClick={() => setSelectedDept(dept.department)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  selectedDept === dept.department
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                }`}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selectedDept === dept.department ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
                 style={FONT}
               >
                 {dept.displayName} ({(dept.waitingList || []).length})
@@ -442,22 +460,26 @@ function LiveQueueContent() {
                 {filteredTickets.map((ticket, idx) => (
                   <div
                     key={ticket._id || idx}
-                    className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-5 px-6 py-5 hover:bg-gray-50 transition-colors"
                   >
+                    <div className="w-16 h-16 rounded-2xl bg-[#1B5A8C] flex items-center justify-center flex-shrink-0 shadow-sm shadow-[#1B5A8C]/20">
+                      <span
+                        className="text-xl font-extrabold text-white tabular-nums"
+                        style={FONT}
+                      >
+                        {ticket.ticketNumber}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-base font-semibold text-gray-900"
+                        style={FONT}
+                      >
+                        {formatTransaction(ticket.transactionType)}
+                      </p>
+                    </div>
                     <span
-                      className="w-8 h-8 rounded-full bg-[#1B5A8C]/10 flex items-center justify-center text-xs font-bold text-[#1B5A8C] flex-shrink-0"
-                      style={FONT}
-                    >
-                      {ticket.ticketNumber}
-                    </span>
-                    <span
-                      className="text-sm font-medium text-gray-900 flex-1"
-                      style={FONT}
-                    >
-                      {formatTransaction(ticket.transactionType)}
-                    </span>
-                    <span
-                      className="text-[11px] text-gray-400 flex-shrink-0 px-2 py-0.5 bg-gray-50 rounded-full"
+                      className="text-xs text-gray-400 flex-shrink-0 px-3 py-1.5 bg-gray-100 rounded-full font-medium"
                       style={FONT}
                     >
                       {ticket.departmentName}

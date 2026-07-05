@@ -1,3 +1,6 @@
+// proxy.ts — Next.js 16 renamed the middleware convention to proxy.
+// Optimistic role gating only; real authorization lives in layouts and inside
+// every server action (actions are publicly POSTable).
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
@@ -10,6 +13,9 @@ export default auth((req) => {
     "/",
     "/public/schedule",
     "/get-ticket",
+    "/auth/login",
+    "/auth/register",
+    "/auth/forgot-password",
     "/auth/error",
     "/live-queue",
   ];
@@ -39,6 +45,17 @@ export default auth((req) => {
   }
 
   if (pathname.startsWith("/student") && req.auth.user?.role !== "2") {
+    const homeUrl = new URL("/", req.url);
+    homeUrl.searchParams.set("error", "forbidden");
+    return NextResponse.redirect(homeUrl);
+  }
+
+  // Staff portal: registrar ("3") and cashier ("6") only; dean/dsdw have no
+  // portal yet and everyone else is forbidden.
+  if (
+    pathname.startsWith("/staff") &&
+    !["3", "6"].includes(req.auth.user?.role ?? "")
+  ) {
     const homeUrl = new URL("/", req.url);
     homeUrl.searchParams.set("error", "forbidden");
     return NextResponse.redirect(homeUrl);

@@ -20,7 +20,7 @@ interface TicketNotificationData {
   ticketId: string;
   transactionType: string;
   queuePosition?: number;
-  notificationType?: "created" | "serving" | "next" | "reminder";
+  notificationType?: "created" | "serving" | "next" | "reminder" | "skipped";
   staffName?: string;
 }
 
@@ -106,18 +106,7 @@ function getEmailTemplate(config: EmailTemplateConfig): string {
               <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 600; color: #1a1a1a; text-align: center; line-height: 1.3;">${title}</h2>
               ${subtitle ? `<p style="margin: 0 0 32px 0; font-size: 13px; color: #888888; text-align: center; line-height: 1.5;">${subtitle}</p>` : ""}
               <div style="margin-bottom: ${actionUrl ? "32px" : "0"};">${content}</div>
-              ${
-                actionUrl && actionLabel
-                  ? `
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                <tr>
-                  <td align="center">
-                    <a href="${actionUrl}" style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: center;">${actionLabel}</a>
-                  </td>
-                </tr>
-              </table>`
-                  : ""
-              }
+              ${actionUrl && actionLabel ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"><tr><td align="center"><a href="${actionUrl}" style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 500; text-align: center;">${actionLabel}</a></td></tr></table>` : ""}
             </td>
           </tr>
           <tr>
@@ -158,7 +147,6 @@ function buildTicketContent(data: TicketNotificationData): string {
   const transactionLabel =
     transactionLabels[data.transactionType] || data.transactionType;
 
-  // Determine message based on notification type
   let headerMessage = "";
   let headerSubtext = "";
 
@@ -180,6 +168,12 @@ function buildTicketContent(data: TicketNotificationData): string {
       headerSubtext = data.staffName
         ? `You're second in line. ${data.staffName} will serve you soon.`
         : "You're second in line. Please prepare your documents.";
+      break;
+    case "skipped":
+      headerMessage = "Your ticket has been skipped";
+      headerSubtext = data.staffName
+        ? `${data.staffName} had to skip your ticket. Please contact the office for assistance.`
+        : "Your ticket was skipped. Please contact the office for assistance.";
       break;
     default:
       headerMessage = "Your ticket has been created!";
@@ -250,6 +244,9 @@ function getTicketPlainText(data: TicketNotificationData): string {
     headerMessage = "You're next in line! Please get ready.";
   else if (data.notificationType === "reminder")
     headerMessage = "Get ready! You're second in line.";
+  else if (data.notificationType === "skipped")
+    headerMessage =
+      "Your ticket was skipped. Please contact the office for assistance.";
 
   return [
     `Hello ${data.studentName},`,
@@ -329,7 +326,6 @@ export async function sendTicketNotificationEmail(
       transactionLabels[data.transactionType] || data.transactionType;
     const { from, senderDomain } = getSenderConfig();
 
-    // Dynamic subject based on notification type
     let subject = `Ticket #${data.ticketNumber} - ${transactionLabel}`;
     if (data.notificationType === "serving")
       subject = `Now Serving: Ticket #${data.ticketNumber} - ${transactionLabel}`;
@@ -337,6 +333,8 @@ export async function sendTicketNotificationEmail(
       subject = `You're Next: Ticket #${data.ticketNumber} - ${transactionLabel}`;
     else if (data.notificationType === "reminder")
       subject = `Get Ready: Ticket #${data.ticketNumber} - ${transactionLabel}`;
+    else if (data.notificationType === "skipped")
+      subject = `Ticket Update: #${data.ticketNumber} - ${transactionLabel}`;
 
     const info = await transporter.sendMail({
       from,
@@ -400,6 +398,137 @@ export async function sendPasswordResetEmail(
     return true;
   } catch (error) {
     console.error("Failed to send password reset email:", error);
+    return false;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Document Request Emails
+// ──────────────────────────────────────────────
+
+export interface DocumentRequestEmailData {
+  email: string;
+  studentName: string;
+  requestId: string;
+  documentTypeLabel: string;
+  copies: number;
+  purpose: string;
+  notificationType:
+    | "submitted"
+    | "processing"
+    | "ready-for-pickup"
+    | "released"
+    | "rejected";
+  remarks?: string;
+}
+
+const documentStatusCopy: Record<
+  DocumentRequestEmailData["notificationType"],
+  { subject: string; headline: string; body: string }
+> = {
+  submitted: {
+    subject: "Document Request Received",
+    headline: "Request received",
+    body: "We received your document request. The Registrar's Office will review it and keep you updated by email.",
+  },
+  processing: {
+    subject: "Document Request In Progress",
+    headline: "Now processing",
+    body: "The Registrar's Office has started processing your document request.",
+  },
+  "ready-for-pickup": {
+    subject: "Your Document is Ready for Pickup",
+    headline: "Ready for pickup",
+    body: "Your requested document is ready. Please claim it at the Registrar's Office during office hours and bring a valid ID.",
+  },
+  released: {
+    subject: "Document Released",
+    headline: "Document released",
+    body: "Your requested document has been released. Thank you!",
+  },
+  rejected: {
+    subject: "Document Request Update",
+    headline: "Request not approved",
+    body: "Unfortunately, your document request could not be processed.",
+  },
+};
+
+function buildDocumentRequestContent(data: DocumentRequestEmailData): string {
+  const copy = documentStatusCopy[data.notificationType];
+  return `
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #555555; text-align: center; line-height: 1.6;">${copy.body}</p>
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f8f8; border-radius: 8px;">
+      <tr>
+        <td style="padding: 24px; text-align: center;">
+          <p style="margin: 0 0 4px 0; font-size: 11px; color: #a0a0a0; text-transform: uppercase; letter-spacing: 1px;">Request Number</p>
+          <p style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #1a1a1a; letter-spacing: 1px;">${data.requestId}</p>
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #555555;"><strong>${data.documentTypeLabel}</strong> • ${data.copies} ${data.copies === 1 ? "copy" : "copies"}</p>
+          <p style="margin: 0; font-size: 12px; color: #888888;">Purpose: ${data.purpose}</p>
+        </td>
+      </tr>
+    </table>
+    ${
+      data.notificationType === "rejected" && data.remarks
+        ? `<p style="margin: 24px 0 0 0; font-size: 13px; color: #b91c1c; text-align: center; line-height: 1.6;"><strong>Reason:</strong> ${data.remarks}</p>`
+        : ""
+    }`;
+}
+
+function getDocumentRequestPlainText(data: DocumentRequestEmailData): string {
+  const copy = documentStatusCopy[data.notificationType];
+  return [
+    `Hello ${data.studentName},`,
+    "",
+    copy.body,
+    "",
+    `Request Number: ${data.requestId}`,
+    `Document: ${data.documentTypeLabel} (${data.copies} ${data.copies === 1 ? "copy" : "copies"})`,
+    `Purpose: ${data.purpose}`,
+    data.notificationType === "rejected" && data.remarks
+      ? `Reason: ${data.remarks}`
+      : "",
+    "",
+    "BCC Queue Management System",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function sendDocumentRequestEmail(
+  data: DocumentRequestEmailData,
+): Promise<boolean> {
+  try {
+    if (!data.email) return false;
+    const copy = documentStatusCopy[data.notificationType];
+    const { from, senderDomain } = getSenderConfig();
+
+    await transporter.sendMail({
+      from,
+      to: data.email,
+      subject: `${copy.subject} — ${data.requestId}`,
+      html: getEmailTemplate({
+        title: `Hello, ${data.studentName}`,
+        subtitle: copy.headline,
+        content: buildDocumentRequestContent(data),
+        footerNote: "Please keep this request number for reference.",
+      }),
+      text: getDocumentRequestPlainText(data),
+      headers: {
+        "X-Priority": "3",
+        "X-Mailer": "BCC Queue Management System",
+        "Message-ID": getMessageId(senderDomain),
+        "List-Unsubscribe": `<mailto:${process.env.SMTP_USER}?subject=unsubscribe>`,
+      },
+    });
+    console.log(
+      `Document request email (${data.notificationType}) sent to ${data.email} (${data.requestId})`,
+    );
+    return true;
+  } catch (error: any) {
+    console.error(
+      "Failed to send document request email:",
+      error.message || error,
+    );
     return false;
   }
 }

@@ -2,7 +2,8 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Ticket, ListChecks } from "lucide-react";
 import { ServeTicketView } from "@/components/registrar/ServeTicketView";
 import { AllTicketsView } from "@/components/registrar/AllTicketsView";
@@ -13,8 +14,18 @@ const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 
 function QueueContent() {
   const params = useParams();
+  const router = useRouter();
   const role = params.role as string;
   const [currentView, setCurrentView] = useState<QueueView>("serve");
+
+  // The ticket queue is cashier-only; registrar uses /requests instead
+  useEffect(() => {
+    if (role !== "cashier") {
+      router.replace(`/staff/${role}/dashboard`);
+    }
+  }, [role, router]);
+
+  if (role !== "cashier") return null;
 
   const tabs = [
     { id: "serve" as const, label: "Serve", icon: Ticket },

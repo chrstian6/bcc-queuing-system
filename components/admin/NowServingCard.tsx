@@ -8,7 +8,7 @@ interface Student {
   firstName: string;
   lastName: string;
   year: string;
-  section: string;
+  campus?: string;
 }
 
 interface Ticket {
@@ -21,7 +21,7 @@ interface Ticket {
 }
 
 interface NowServingCardProps {
-  ticket: Ticket;
+  ticket: Ticket | null;
   hasNext: boolean;
 }
 
@@ -31,6 +31,7 @@ export function NowServingCard({ ticket, hasNext }: NowServingCardProps) {
   const [error, setError] = useState<string | null>(null);
 
   async function handleComplete() {
+    if (!ticket) return;
     setError(null);
     startComplete(async () => {
       const res = await completeTicket(ticket.ticketNumber);
@@ -69,28 +70,36 @@ export function NowServingCard({ ticket, hasNext }: NowServingCardProps) {
 
       {/* Ticket number */}
       <p className="text-7xl font-bold tracking-tight text-white leading-none mb-4">
-        {ticket.ticketNumber}
+        {ticket ? `#${ticket.ticketNumber}` : "—"}
       </p>
 
       {/* Student info */}
-      <p className="text-[15px] font-medium text-white/75 mb-2">
-        {ticket.student?.firstName} {ticket.student?.lastName}
-      </p>
-      <span
-        className="inline-block rounded-md px-2.5 py-0.5 text-xs text-white/60 w-fit mb-6"
-        style={{
-          background: "rgba(255,255,255,0.1)",
-          border: "0.5px solid rgba(255,255,255,0.15)",
-        }}
-      >
-        {ticket.transactionType}
-      </span>
+      {ticket ? (
+        <>
+          <p className="text-[15px] font-medium text-white/75 mb-2">
+            {ticket.student?.firstName} {ticket.student?.lastName}
+          </p>
+          <span
+            className="inline-block rounded-md px-2.5 py-0.5 text-xs text-white/60 w-fit mb-6"
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              border: "0.5px solid rgba(255,255,255,0.15)",
+            }}
+          >
+            {ticket.transactionType}
+          </span>
+        </>
+      ) : (
+        <p className="text-[15px] font-medium text-white/50 mb-6">
+          No ticket currently serving
+        </p>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 mt-auto">
         <button
           onClick={handleComplete}
-          disabled={isBusy}
+          disabled={isBusy || !ticket}
           className="flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-opacity disabled:opacity-50"
           style={{
             background: "rgba(255,255,255,0.1)",

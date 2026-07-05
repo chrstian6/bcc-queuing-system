@@ -4,6 +4,7 @@ import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminHeader } from "@/components/admin/AdminHeader";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 export default async function AdminLayout({
   children,
@@ -21,15 +22,12 @@ export default async function AdminLayout({
   }
 
   return (
-    <div
-      className="flex h-screen overflow-hidden"
-      style={{ fontFamily: "var(--font-geist-sans)" }}
-    >
+    <SidebarProvider style={{ fontFamily: "var(--font-geist-sans)" }}>
       <AdminSidebar user={session.user} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <SidebarInset>
         <AdminHeader user={session.user} />
         <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

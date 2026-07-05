@@ -22,6 +22,13 @@ export const authConfig: NextAuthConfig = {
           token.cashierWindow = user.cashierWindow;
           token.mustChangePassword = user.mustChangePassword;
         }
+
+        // Student-specific fields
+        if (user.schoolId) {
+          token.schoolId = user.schoolId;
+          token.year = user.year;
+          token.campus = user.campus;
+        }
       }
       return token;
     },
@@ -38,6 +45,13 @@ export const authConfig: NextAuthConfig = {
           session.user.staffRole = token.staffRole as string;
           session.user.cashierWindow = token.cashierWindow as string;
           session.user.mustChangePassword = token.mustChangePassword as boolean;
+        }
+
+        // Student-specific fields
+        if (token.schoolId) {
+          session.user.schoolId = token.schoolId as string;
+          session.user.year = token.year as string;
+          session.user.campus = token.campus as string;
         }
       }
       return session;

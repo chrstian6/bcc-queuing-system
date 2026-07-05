@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { getStaffQueueStats, getStaffTickets } from "@/actions/ticket";
 import { getStaffDailyStats } from "@/actions/ticketNumberDistribution";
 import { Badge } from "@/components/ui/badge";
+import { getTransactionLabel } from "@/lib/ticketUtils";
+import { RegistrarDashboardView } from "@/components/registrar/RegistrarDashboardView";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,7 @@ interface Ticket {
   ticketNumber: string;
   status: "pending" | "serving" | "completed" | "cancelled";
   transactionType: string;
+  transactionDescription?: string;
   createdAt: string;
   student?: Student;
 }
@@ -34,7 +37,11 @@ function formatTime(date: string) {
   });
 }
 
-function formatTransactionType(type: string) {
+function formatTransactionLabel(type: string, description?: string) {
+  return getTransactionLabel(type, description);
+}
+
+function getTransactionShortLabel(type: string) {
   return type
     ?.replace(/-/g, " ")
     .replace(/\b\w/g, (l: string) => l.toUpperCase());
@@ -66,7 +73,8 @@ export default async function StaffDashboardPage({
   const { success, session } = await getSession();
   if (!success || !session) redirect("/?error=unauthorized");
 
-  const staffRoles = ["3", "4", "5", "6"];
+  // Match the layout's policy: cashier ("6") and registrar ("3") only
+  const staffRoles = ["3", "6"];
   if (!staffRoles.includes(session.user?.role || "")) {
     redirect("/?error=forbidden");
   }
@@ -77,6 +85,11 @@ export default async function StaffDashboardPage({
 
   const staffId = session.user?.staffId || "";
   const staffName = session.user?.name || "Staff";
+
+  // Registrar gets a document-request dashboard instead of the queue one
+  if (role === "registrar") {
+    return <RegistrarDashboardView staffName={staffName} />;
+  }
 
   // Role display names
   const roleNames: Record<string, string> = {
@@ -159,11 +172,19 @@ export default async function StaffDashboardPage({
                   {servingTicket.student?.firstName}{" "}
                   {servingTicket.student?.lastName}
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge className="bg-white/20 text-white border-0 text-[11px] font-['Plus_Jakarta_Sans']">
-                    {formatTransactionType(servingTicket.transactionType)}
+                    {formatTransactionLabel(
+                      servingTicket.transactionType,
+                      servingTicket.transactionDescription,
+                    )}
                   </Badge>
                 </div>
+                {servingTicket.transactionDescription && (
+                  <p className="text-[11px] text-white/60 font-['Plus_Jakarta_Sans'] italic">
+                    {servingTicket.transactionDescription}
+                  </p>
+                )}
                 <p className="text-[11px] text-white/60 font-['Plus_Jakarta_Sans']">
                   {servingTicket.student?.year} · Section{" "}
                   {servingTicket.student?.section}
@@ -211,13 +232,21 @@ export default async function StaffDashboardPage({
                     variant="outline"
                     className="text-[11px] h-5 px-2 font-['Plus_Jakarta_Sans']"
                   >
-                    {formatTransactionType(nextInLine.transactionType)}
+                    {formatTransactionLabel(
+                      nextInLine.transactionType,
+                      nextInLine.transactionDescription,
+                    )}
                   </Badge>
                   <span className="text-[11px] text-gray-500 font-['Plus_Jakarta_Sans']">
                     {nextInLine.student?.year} · Section{" "}
                     {nextInLine.student?.section}
                   </span>
                 </div>
+                {nextInLine.transactionDescription && (
+                  <p className="text-[11px] text-gray-400 mt-1 font-['Plus_Jakarta_Sans'] italic">
+                    {nextInLine.transactionDescription}
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -280,7 +309,11 @@ export default async function StaffDashboardPage({
                     </p>
                     <p className="text-[11px] text-gray-500 mt-0.5 truncate font-['Plus_Jakarta_Sans']">
                       {ticket.student?.year} · Section {ticket.student?.section}{" "}
-                      · {formatTransactionType(ticket.transactionType)}
+                      ·{" "}
+                      {formatTransactionLabel(
+                        ticket.transactionType,
+                        ticket.transactionDescription,
+                      )}
                     </p>
                   </div>
                   <span className="text-[11px] text-gray-400 tabular-nums flex-shrink-0 font-['Plus_Jakarta_Sans']">
@@ -329,7 +362,10 @@ export default async function StaffDashboardPage({
                       </span>
                     </div>
                     <p className="text-[11px] text-gray-500 mt-0.5 capitalize font-['Plus_Jakarta_Sans']">
-                      {formatTransactionType(ticket.transactionType)}
+                      {formatTransactionLabel(
+                        ticket.transactionType,
+                        ticket.transactionDescription,
+                      )}
                     </p>
                   </div>
                   <span className="text-[11px] text-gray-400 tabular-nums flex-shrink-0 font-['Plus_Jakarta_Sans']">

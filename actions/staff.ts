@@ -6,6 +6,9 @@ import Staff from "@/models/Staff";
 import User from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { sendWelcomeEmail } from "@/lib/email";
+import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
+import { ROLES } from "@/lib/roles";
+import { getAppDayRange } from "@/lib/time";
 
 interface CreateStaffData {
   facultyId: string;
@@ -91,6 +94,9 @@ export async function createStaffAccount(
   data: CreateStaffData,
 ): Promise<StaffResponse> {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     if (
       !data.facultyId ||
       !data.firstName ||
@@ -226,6 +232,14 @@ export async function createStaffAccount(
 
 export async function getAllStaff() {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find().sort({ createdAt: -1 }).lean();
     return { success: true, staff: JSON.parse(JSON.stringify(staff)) };
@@ -237,6 +251,13 @@ export async function getAllStaff() {
 
 export async function getStaffById(staffId: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOne({ staffId } as any).lean();
     if (!staff) return { success: false, error: "Staff not found" };
@@ -249,6 +270,14 @@ export async function getStaffById(staffId: string) {
 
 export async function getStaffByRole(roleName: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find({ roleName } as any)
       .sort({ createdAt: -1 })
@@ -262,6 +291,14 @@ export async function getStaffByRole(roleName: string) {
 
 export async function getStaffByStatus(status: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find({ status } as any)
       .sort({ createdAt: -1 })
@@ -278,6 +315,9 @@ export async function updateStaffStatus(
   status: "active" | "inactive" | "suspended",
 ) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOneAndUpdate(
       { staffId } as any,
@@ -300,6 +340,9 @@ export async function updateStaffRole(
   roleAccessLevel?: number,
 ) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const updateData: any = { roleName };
     if (roleAccessLevel) updateData.roleAccessLevel = roleAccessLevel;
@@ -318,6 +361,9 @@ export async function updateStaffRole(
 
 export async function deleteStaff(staffId: string) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOneAndDelete({ staffId } as any);
     if (!staff) return { success: false, error: "Staff not found" };
@@ -332,6 +378,9 @@ export async function deleteStaff(staffId: string) {
 
 export async function getStaffStats() {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
 
     const [
@@ -372,5 +421,41 @@ export async function getStaffStats() {
   } catch (error) {
     console.error("Error fetching staff stats:", error);
     return { success: false, error: "Failed to fetch staff statistics" };
+  }
+}
+
+export async function getUserStats() {
+  try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
+    await connectDB();
+    const { start: today, end: tomorrow } = getAppDayRange();
+
+    const [totalUsers, students, admins, staffCount, studentsToday] =
+      await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ role: 2 } as any),
+        User.countDocuments({ role: 1 } as any),
+        Staff.countDocuments(),
+        User.countDocuments({
+          role: 2,
+          createdAt: { $gte: today, $lt: tomorrow },
+        } as any),
+      ]);
+
+    return {
+      success: true,
+      stats: {
+        totalUsers: totalUsers + staffCount,
+        students,
+        admins,
+        staff: staffCount,
+        studentsToday,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching user stats:", error);
+    return { success: false, error: "Failed to fetch user statistics" };
   }
 }
