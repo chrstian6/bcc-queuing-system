@@ -17,7 +17,6 @@ export async function changeStaffPassword(
   newPassword: string,
 ): Promise<ChangePasswordResponse> {
   try {
-    // Get the current session
     const session = await auth();
 
     if (!session?.user) {
@@ -72,9 +71,13 @@ export async function changeStaffPassword(
 
     await connectDB();
 
+    // Now TypeScript recognizes these properties
+    const userEmail = session.user.email;
+    const userStaffId = session.user.staffId;
+
     // Find staff by email or staffId from session
     const staff = await Staff.findOne({
-      $or: [{ email: session.user.email }, { staffId: session.user.staffId }],
+      $or: [{ email: userEmail }, { staffId: userStaffId }],
     }).select("+password");
 
     if (!staff) {
@@ -100,7 +103,6 @@ export async function changeStaffPassword(
 
     await staff.save();
 
-    // Revalidate paths
     revalidatePath("/staff/change-password");
     revalidatePath("/staff/dashboard");
 
@@ -142,8 +144,11 @@ export async function checkMustChangePassword(): Promise<{
 
     await connectDB();
 
+    const userEmail = session.user.email;
+    const userStaffId = session.user.staffId;
+
     const staff = await Staff.findOne({
-      $or: [{ email: session.user.email }, { staffId: session.user.staffId }],
+      $or: [{ email: userEmail }, { staffId: userStaffId }],
     });
 
     if (!staff) {

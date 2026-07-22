@@ -91,6 +91,7 @@ export async function createTicket(
 
   // Get the department for this transaction type
   const department = getDepartmentForTransaction(data.transactionType);
+  console.log("📋 Creating ticket for department:", department);
 
   // Retry logic for handling concurrent requests
   const MAX_RETRIES = 3;
@@ -111,6 +112,12 @@ export async function createTicket(
           numberResult.error || "Failed to generate ticket number",
         );
       }
+
+      console.log("✅ Ticket number generated:", numberResult.ticketNumber);
+      console.log(
+        "👤 Assigned to staff:",
+        numberResult.staffId || "Unassigned",
+      );
 
       // Create ticket with the distributed number
       const ticket = new Ticket({
@@ -146,6 +153,7 @@ export async function createTicket(
       });
 
       await ticket.save();
+      console.log("💾 Ticket saved successfully");
 
       // Convert to plain object (remove Mongoose document methods)
       const ticketObj = ticket.toObject();
@@ -163,10 +171,12 @@ export async function createTicket(
           queuePosition: numberResult.queuePosition,
         }).then((success) => {
           if (success) {
-            console.log(`Ticket notification email sent to ${recipientEmail}`);
+            console.log(
+              `📧 Ticket notification email sent to ${recipientEmail}`,
+            );
           } else {
             console.log(
-              `Failed to send ticket notification email to ${recipientEmail}`,
+              `❌ Failed to send ticket notification email to ${recipientEmail}`,
             );
           }
         });
@@ -203,7 +213,7 @@ export async function createTicket(
       };
     } catch (error: any) {
       console.error(
-        `Error creating ticket (Attempt ${attempt + 1}/${MAX_RETRIES}):`,
+        `❌ Error creating ticket (Attempt ${attempt + 1}/${MAX_RETRIES}):`,
         error.message || error,
       );
 
@@ -645,6 +655,7 @@ export async function getDepartmentTickets(
 
 /**
  * Get tickets assigned to or served by a specific staff member
+ * UPDATED: Enhanced with debugging and removed date filter by default
  */
 export async function getStaffTickets(
   staffId: string,
@@ -656,20 +667,104 @@ export async function getStaffTickets(
   try {
     await connectDB();
 
-    const staff = await Staff.findOne({ staffId });
+    console.log("🔍 [getStaffTickets] Called with staffId:", staffId);
+    console.log("🔍 [getStaffTickets] Filters:", JSON.stringify(filters));
 
+    // First find the staff member
+    const staff = await Staff.findOne({ staffId }).lean();
+
+    if (!staff) {
+      console.error(
+        "❌ [getStaffTickets] Staff not found for staffId:",
+        staffId,
+      );
+
+      // Debug: Show all staff in database
+      const allStaff = await Staff.find({})
+        .select("staffId roleName firstName lastName")
+        .lean();
+      console.log(
+        "📋 [getStaffTickets] All staff in database:",
+        JSON.stringify(allStaff, null, 2),
+      );
+
+      return {
+        success: false,
+        error: `Staff not found with ID: ${staffId}`,
+        tickets: [],
+      };
+    }
+
+    console.log("👤 [getStaffTickets] Staff found:", {
+      staffId: (staff as any).staffId,
+      roleName: (staff as any).roleName,
+      name: `${(staff as any).firstName} ${(staff as any).lastName}`,
+      status: (staff as any).status,
+    });
+
+    // Check all tickets in database for debugging
+    const allTicketsCount = await Ticket.countDocuments();
+    console.log(
+      `📊 [getStaffTickets] Total tickets in database: ${allTicketsCount}`,
+    );
+
+    // Check tickets by department
+    const deptTicketsCount = await Ticket.countDocuments({
+      department: (staff as any).roleName,
+    });
+    console.log(
+      `📊 [getStaffTickets] Tickets for department '${(staff as any).roleName}': ${deptTicketsCount}`,
+    );
+
+    // Check tickets served by staff
+    const servedTicketsCount = await Ticket.countDocuments({
+      servedBy: staffId,
+    });
+    console.log(
+      `📊 [getStaffTickets] Tickets served by staff: ${servedTicketsCount}`,
+    );
+
+    // Check tickets assigned to staff
+    const assignedTicketsCount = await Ticket.countDocuments({
+      assignedTo: staffId,
+    });
+    console.log(
+      `📊 [getStaffTickets] Tickets assigned to staff: ${assignedTicketsCount}`,
+    );
+
+    // Show sample tickets for debugging
+    const sampleTickets = await Ticket.find({}).limit(5).lean();
+    console.log(
+      "📋 [getStaffTickets] Sample tickets:",
+      JSON.stringify(
+        sampleTickets.map((t: any) => ({
+          ticketNumber: t.ticketNumber,
+          department: t.department,
+          status: t.status,
+          servedBy: t.servedBy,
+          assignedTo: t.assignedTo,
+          createdAt: t.createdAt,
+        })),
+        null,
+        2,
+      ),
+    );
+
+    // Build query - REMOVED DATE FILTER to show all tickets
     const query: any = {
       $or: [
         { servedBy: staffId },
         { assignedTo: staffId },
-        ...(staff?.roleName ? [{ department: staff.roleName }] : []),
+        { department: (staff as any).roleName },
       ],
     };
 
+    // Apply status filter if provided
     if (filters?.status) {
       query.status = filters.status;
     }
 
+    // Only apply date filter if explicitly provided
     if (filters?.date) {
       const date = new Date(filters.date);
       date.setHours(0, 0, 0, 0);
@@ -678,12 +773,27 @@ export async function getStaffTickets(
       query.createdAt = { $gte: date, $lt: nextDate };
     }
 
+    console.log(
+      "🔎 [getStaffTickets] Final query:",
+      JSON.stringify(query, null, 2),
+    );
+
+    // Fetch tickets
     const tickets = await Ticket.find(query).sort({ createdAt: -1 }).lean();
 
-    return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
+    console.log(`✅ [getStaffTickets] Found ${tickets.length} tickets`);
+
+    return {
+      success: true,
+      tickets: JSON.parse(JSON.stringify(tickets)),
+    };
   } catch (error) {
-    console.error("Error fetching staff tickets:", error);
-    return { success: false, error: "Failed to fetch staff tickets" };
+    console.error("❌ [getStaffTickets] Error:", error);
+    return {
+      success: false,
+      error: "Failed to fetch staff tickets",
+      tickets: [],
+    };
   }
 }
 
@@ -748,6 +858,10 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
       return { success: false, error: "Staff not found" };
     }
 
+    console.log(
+      `🔄 [serveTicket] Serving ticket ${ticketNumber} by staff ${staffId} (${staff.roleName})`,
+    );
+
     // Find and update the ticket - NO DATE FILTER
     const ticket = await Ticket.findOneAndUpdate(
       {
@@ -766,11 +880,16 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
     );
 
     if (!ticket) {
+      console.error(
+        `❌ [serveTicket] Ticket not found or not pending: ${ticketNumber}`,
+      );
       return {
         success: false,
         error: "Ticket not found or already being served",
       };
     }
+
+    console.log(`✅ [serveTicket] Ticket ${ticketNumber} now serving`);
 
     revalidatePath(`/staff/${staff.roleName}/dashboard`);
     revalidatePath(`/staff/${staff.roleName}/queue`);
@@ -792,6 +911,10 @@ export async function completeServedTicket(
   try {
     await connectDB();
 
+    console.log(
+      `✅ [completeServedTicket] Completing ticket ${ticketNumber} by staff ${staffId}`,
+    );
+
     // Find and update - NO DATE FILTER
     const ticket = await Ticket.findOneAndUpdate(
       {
@@ -807,11 +930,16 @@ export async function completeServedTicket(
     );
 
     if (!ticket) {
+      console.error(
+        `❌ [completeServedTicket] Ticket not found or not serving: ${ticketNumber}`,
+      );
       return {
         success: false,
         error: "Ticket not found or not being served by you",
       };
     }
+
+    console.log(`✅ [completeServedTicket] Ticket ${ticketNumber} completed`);
 
     const staff = await Staff.findOne({ staffId });
     if (staff) {

@@ -22,9 +22,7 @@ import {
   Mail,
   User,
   ArrowLeft,
-  Building2,
   GraduationCap,
-  HandHeart,
   Wallet,
   Hash,
   LayoutGrid,
@@ -38,7 +36,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-type StaffRole = "registrar" | "dean" | "dsdw" | "cashier";
+type StaffRole = "registrar" | "cashier";
 
 const STAFF_ROLES = [
   {
@@ -46,18 +44,6 @@ const STAFF_ROLES = [
     label: "Registrar",
     description: "Manages student records, enrollment, and academic documents",
     icon: GraduationCap,
-  },
-  {
-    value: "dean" as StaffRole,
-    label: "Dean",
-    description: "Oversees academic programs and faculty",
-    icon: Building2,
-  },
-  {
-    value: "dsdw" as StaffRole,
-    label: "DSDW",
-    description: "Student welfare and development services",
-    icon: HandHeart,
   },
   {
     value: "cashier" as StaffRole,
@@ -113,8 +99,6 @@ export function CreateUserForm() {
 
   const roleLabels: Record<string, string> = {
     registrar: "Registrar",
-    dean: "Dean",
-    dsdw: "DSDW",
     cashier: "Cashier",
   };
 
@@ -206,7 +190,7 @@ export function CreateUserForm() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
-        roleName: staffRole as "registrar" | "dean" | "dsdw" | "cashier",
+        roleName: staffRole as "registrar" | "cashier",
         roleAccessLevel: 6,
         cashierWindow: staffRole === "cashier" ? cashierWindow : undefined,
       });
@@ -280,7 +264,7 @@ export function CreateUserForm() {
               will be emailed automatically.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {STAFF_ROLES.map((role) => (
               <button
                 key={role.value}

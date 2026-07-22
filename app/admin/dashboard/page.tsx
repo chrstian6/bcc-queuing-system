@@ -1,5 +1,6 @@
 // app/admin/dashboard/page.tsx
 export const dynamic = "force-dynamic";
+
 import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
 import {
@@ -30,136 +31,6 @@ interface Ticket {
   student?: Student;
 }
 
-// ── Mock fallback data ───────────────────────────────────────────────────────
-
-const MOCK_SERVING: Ticket = {
-  ticketNumber: "A-042",
-  status: "serving",
-  transactionType: "Enrollment",
-  createdAt: new Date().toISOString(),
-  student: {
-    firstName: "Maria",
-    lastName: "Santos",
-    year: "3rd Year",
-    section: "B",
-  },
-};
-
-const MOCK_PENDING: Ticket[] = [
-  {
-    ticketNumber: "A-043",
-    status: "pending",
-    transactionType: "Clearance",
-    createdAt: new Date(Date.now() - 3 * 60000).toISOString(),
-    student: {
-      firstName: "Juan",
-      lastName: "dela Cruz",
-      year: "3rd Year",
-      section: "B",
-    },
-  },
-  {
-    ticketNumber: "A-044",
-    status: "pending",
-    transactionType: "Enrollment",
-    createdAt: new Date(Date.now() - 8 * 60000).toISOString(),
-    student: {
-      firstName: "Ana",
-      lastName: "Reyes",
-      year: "2nd Year",
-      section: "A",
-    },
-  },
-  {
-    ticketNumber: "A-045",
-    status: "pending",
-    transactionType: "Clearance",
-    createdAt: new Date(Date.now() - 14 * 60000).toISOString(),
-    student: {
-      firstName: "Carlo",
-      lastName: "Mendoza",
-      year: "4th Year",
-      section: "C",
-    },
-  },
-  {
-    ticketNumber: "A-046",
-    status: "pending",
-    transactionType: "Registration",
-    createdAt: new Date(Date.now() - 19 * 60000).toISOString(),
-    student: {
-      firstName: "Liza",
-      lastName: "Torres",
-      year: "1st Year",
-      section: "B",
-    },
-  },
-  {
-    ticketNumber: "A-047",
-    status: "pending",
-    transactionType: "Enrollment",
-    createdAt: new Date(Date.now() - 24 * 60000).toISOString(),
-    student: {
-      firstName: "Ben",
-      lastName: "Aquino",
-      year: "3rd Year",
-      section: "D",
-    },
-  },
-];
-
-const MOCK_TODAY: Ticket[] = [
-  MOCK_SERVING,
-  {
-    ticketNumber: "A-041",
-    status: "completed",
-    transactionType: "Clearance",
-    createdAt: new Date(Date.now() - 10 * 60000).toISOString(),
-    student: {
-      firstName: "Pedro",
-      lastName: "Bautista",
-      year: "4th Year",
-      section: "A",
-    },
-  },
-  {
-    ticketNumber: "A-040",
-    status: "completed",
-    transactionType: "Registration",
-    createdAt: new Date(Date.now() - 20 * 60000).toISOString(),
-    student: {
-      firstName: "Grace",
-      lastName: "Villanueva",
-      year: "1st Year",
-      section: "C",
-    },
-  },
-  {
-    ticketNumber: "A-039",
-    status: "cancelled",
-    transactionType: "Enrollment",
-    createdAt: new Date(Date.now() - 30 * 60000).toISOString(),
-    student: {
-      firstName: "Mark",
-      lastName: "Lim",
-      year: "2nd Year",
-      section: "B",
-    },
-  },
-  {
-    ticketNumber: "A-038",
-    status: "completed",
-    transactionType: "Clearance",
-    createdAt: new Date(Date.now() - 40 * 60000).toISOString(),
-    student: {
-      firstName: "Joy",
-      lastName: "Castro",
-      year: "3rd Year",
-      section: "A",
-    },
-  },
-];
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(date: string) {
@@ -189,19 +60,16 @@ export default async function AdminDashboardPage() {
     getTodayTickets(),
   ]);
 
-  // Fall back to mock data if the fetch failed or returned empty
   const pendingTickets: Ticket[] =
     pendingData.success && pendingData.tickets?.length > 0
       ? pendingData.tickets
-      : MOCK_PENDING;
+      : [];
 
   const todayTickets: Ticket[] =
-    todayData.success && todayData.tickets?.length > 0
-      ? todayData.tickets
-      : MOCK_TODAY;
+    todayData.success && todayData.tickets?.length > 0 ? todayData.tickets : [];
 
   const servingTicket =
-    todayTickets.find((t) => t.status === "serving") ?? MOCK_SERVING;
+    todayTickets.find((t) => t.status === "serving") ?? null;
 
   const nextInLine = pendingTickets[0] ?? null;
 
@@ -284,7 +152,7 @@ export default async function AdminDashboardPage() {
             {[
               { label: "Waiting", value: waitingCount },
               { label: "Served today", value: servedToday },
-              { label: "Avg wait", value: "6m" },
+              { label: "Avg wait", value: "—" },
             ].map(({ label, value }) => (
               <div
                 key={label}

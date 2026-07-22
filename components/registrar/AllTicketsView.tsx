@@ -3,7 +3,14 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, ChevronDown, Clock } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  Clock,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { getSession } from "@/actions/auth";
 import { getStaffTickets } from "@/actions/ticket";
 import { getDepartmentStaffCounters } from "@/actions/ticketNumberDistribution";
@@ -14,36 +21,22 @@ interface AllTicketsViewProps {
 
 const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 
-// Cache for staff names to avoid repeated lookups
+// Cache for staff names
 const staffNameCache: Record<string, string> = {};
 
-// Cache for ticket history data
-let cachedTickets: any[] = [];
-let cachedStaffCounters: any[] = [];
-let lastFetchTime = 0;
-const CACHE_DURATION = 30000; // 30 seconds
-
-// Inline skeleton for history view
 function HistorySkeleton() {
   return (
     <div className="space-y-4 animate-pulse" style={FONT}>
-      {/* Header */}
       <div>
         <div className="h-4 w-16 bg-gray-100 rounded-full mb-1" />
         <div className="h-3 w-20 bg-gray-100 rounded-full" />
       </div>
-
-      {/* Filter Pills */}
       <div className="flex items-center gap-1.5">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="h-7 w-20 bg-gray-100 rounded-full" />
         ))}
       </div>
-
-      {/* Search */}
       <div className="h-9 bg-gray-100 rounded-lg" />
-
-      {/* Timeline */}
       <div className="space-y-6">
         <div>
           <div className="flex items-center gap-3 mb-3">
@@ -73,150 +66,92 @@ function HistorySkeleton() {
 
 export function AllTicketsView({ department }: AllTicketsViewProps) {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [tickets, setTickets] = useState<any[]>(cachedTickets);
-  const [staffCounters, setStaffCounters] =
-    useState<any[]>(cachedStaffCounters);
-  const [isLoading, setIsLoading] = useState(cachedTickets.length === 0);
+  const [staffId, setStaffId] = useState<string | null>(null);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [staffCounters, setStaffCounters] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [hasMoreTickets, setHasMoreTickets] = useState(false);
-  const [animatingTicketId, setAnimatingTicketId] = useState<string | null>(
-    null,
-  );
-  const [displayCount, setDisplayCount] = useState(10);
-  const previousTicketIdsRef = useRef<Set<string>>(new Set());
-  const isInitialMount = useRef(true);
+  const [displayCount, setDisplayCount] = useState(20);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const loadTickets = useCallback(
-    async (forceRefresh = false) => {
-      try {
-        const now = Date.now();
-        if (
-          !forceRefresh &&
-          cachedTickets.length > 0 &&
-          now - lastFetchTime < CACHE_DURATION
-        ) {
-          setTickets(cachedTickets);
-          setStaffCounters(cachedStaffCounters);
-          setIsLoading(false);
-          return;
-        }
-
-        if (isInitialMount.current && cachedTickets.length > 0) {
-          setIsLoading(false);
-        } else {
-          setIsLoading(true);
-        }
-
-        const sessionResult = await getSession();
-        if (!sessionResult.success || !sessionResult.session) {
-          router.push("/?error=unauthorized");
-          return;
-        }
-        setUser(sessionResult.session.user);
-
-        const staffId = sessionResult.session.user?.staffId;
-        if (!staffId) {
-          setIsLoading(false);
-          return;
-        }
-
-        const filters: any = {};
-        if (statusFilter !== "all") {
-          filters.status = statusFilter;
-        }
-
-        const allResult = await getStaffTickets(staffId, filters);
-        const today = new Date().toISOString().split("T")[0];
-        filters.date = today;
-        const result = await getStaffTickets(staffId, filters);
-
-        if (result.success) {
-          const newTickets = result.tickets;
-
-          const currentIds = new Set(previousTicketIdsRef.current);
-          newTickets.forEach((ticket: any) => {
-            if (
-              !currentIds.has(ticket._id) &&
-              previousTicketIdsRef.current.size > 0
-            ) {
-              setAnimatingTicketId(ticket._id);
-              setTimeout(() => setAnimatingTicketId(null), 600);
-            }
-          });
-
-          previousTicketIdsRef.current = new Set(
-            newTickets.map((t: any) => t._id),
-          );
-          cachedTickets = newTickets;
-          lastFetchTime = now;
-          setTickets(newTickets);
-          setDisplayCount(10);
-
-          if (allResult.success) {
-            setHasMoreTickets(
-              newTickets.length < allResult.tickets.length ||
-                allResult.tickets.length > 10,
-            );
-          }
-        }
-
-        if (
-          cachedStaffCounters.length === 0 ||
-          now - lastFetchTime >= CACHE_DURATION
-        ) {
-          const countersResult = await getDepartmentStaffCounters(department);
-          if (countersResult.success) {
-            cachedStaffCounters = countersResult.counters;
-            setStaffCounters(countersResult.counters);
-          }
-        }
-      } catch (error) {
-        console.error("Error loading tickets:", error);
-      } finally {
-        setIsLoading(false);
-        isInitialMount.current = false;
-      }
-    },
-    [statusFilter, router, department],
-  );
-
-  useEffect(() => {
-    loadTickets(true);
-  }, [loadTickets]);
-
-  const handleLoadMore = async () => {
-    if (!user?.staffId) return;
-
-    setIsLoadingMore(true);
+  const loadTickets = useCallback(async () => {
     try {
+      setIsLoading(true);
+      setLoadError(null);
+
+      console.log(
+        "🔄 AllTicketsView: Loading tickets for department:",
+        department,
+      );
+
+      const sessionResult = await getSession();
+      if (!sessionResult.success || !sessionResult.session) {
+        router.push("/?error=unauthorized");
+        return;
+      }
+
+      const userStaffId = sessionResult.session.user?.staffId;
+      if (!userStaffId) {
+        setLoadError("Staff ID not found");
+        setIsLoading(false);
+        return;
+      }
+
+      setStaffId(userStaffId);
+      console.log("AllTicketsView: Fetching tickets for staffId:", userStaffId);
+
+      // Fetch tickets WITHOUT date filter to get all tickets
       const filters: any = {};
       if (statusFilter !== "all") {
         filters.status = statusFilter;
       }
 
-      const result = await getStaffTickets(user.staffId, filters);
+      const result = await getStaffTickets(userStaffId, filters);
+      console.log("AllTicketsView: Tickets result:", {
+        success: result.success,
+        count: result.tickets?.length,
+      });
+
       if (result.success) {
-        cachedTickets = result.tickets;
-        lastFetchTime = Date.now();
-        setTickets(result.tickets);
-        setHasMoreTickets(false);
-        setDisplayCount(result.tickets.length);
+        setTickets(result.tickets || []);
+        setDisplayCount(20);
+      } else {
+        console.error("Failed to fetch tickets:", result.error);
+        setTickets([]);
+      }
+
+      // Fetch staff counters for names
+      try {
+        const countersResult = await getDepartmentStaffCounters(department);
+        if (countersResult.success) {
+          setStaffCounters(countersResult.counters || []);
+        }
+      } catch (err) {
+        console.error("Error fetching staff counters:", err);
       }
     } catch (error) {
-      console.error("Error loading more tickets:", error);
+      console.error("Error loading tickets:", error);
+      setLoadError("Failed to load tickets");
     } finally {
-      setIsLoadingMore(false);
+      setIsLoading(false);
     }
+  }, [statusFilter, router, department]);
+
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
+
+  const handleLoadMore = () => {
+    setDisplayCount((prev) => prev + 20);
   };
 
   const getStaffName = (staffId: string): string => {
     if (!staffId) return "—";
     if (staffNameCache[staffId]) return staffNameCache[staffId];
     const staff = staffCounters.find((s) => s.staffId === staffId);
-    const name = staff ? staff.staffName : "—";
+    const name = staff ? staff.staffName : staffId.slice(0, 8) + "...";
     staffNameCache[staffId] = name;
     return name;
   };
@@ -233,6 +168,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
   });
 
   const displayedTickets = filteredTickets.slice(0, displayCount);
+  const hasMore = displayCount < filteredTickets.length;
 
   const groupedTickets = displayedTickets.reduce(
     (groups: Record<string, any[]>, ticket) => {
@@ -252,9 +188,12 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
   const getStatusDot = (status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-400",
+      waiting: "bg-yellow-400",
       serving: "bg-blue-500 animate-pulse",
       completed: "bg-green-500",
       cancelled: "bg-red-400",
+      "no-show": "bg-orange-400",
+      skipped: "bg-purple-400",
     };
     return styles[status] || "bg-gray-400";
   };
@@ -262,9 +201,12 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
   const getStatusStyle = (status: string) => {
     const styles: Record<string, string> = {
       pending: "text-yellow-700",
+      waiting: "text-yellow-700",
       serving: "text-blue-700",
       completed: "text-green-700",
       cancelled: "text-red-400 line-through",
+      "no-show": "text-orange-700",
+      skipped: "text-purple-700",
     };
     return styles[status] || "text-gray-700";
   };
@@ -280,29 +222,64 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
 
   const statusCounts = {
     all: tickets.length,
-    pending: tickets.filter((t) => t.status === "pending").length,
+    pending: tickets.filter(
+      (t) => t.status === "pending" || t.status === "waiting",
+    ).length,
     serving: tickets.filter((t) => t.status === "serving").length,
     completed: tickets.filter((t) => t.status === "completed").length,
-    cancelled: tickets.filter((t) => t.status === "cancelled").length,
+    cancelled: tickets.filter(
+      (t) =>
+        t.status === "cancelled" ||
+        t.status === "no-show" ||
+        t.status === "skipped",
+    ).length,
   };
 
   if (isLoading) {
     return <HistorySkeleton />;
   }
 
+  if (loadError) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center py-20 gap-4"
+        style={FONT}
+      >
+        <AlertCircle className="w-12 h-12 text-red-400" />
+        <p className="text-sm text-gray-500 text-center">{loadError}</p>
+        <button
+          onClick={() => loadTickets()}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4" style={FONT}>
       {/* Header */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-          History
-        </h2>
-        <p className="text-xs text-gray-400 mt-0.5">
-          {filteredTickets.length} ticket
-          {filteredTickets.length !== 1 ? "s" : ""}
-          {displayCount < filteredTickets.length &&
-            ` · Showing ${displayCount}`}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+            History
+          </h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {filteredTickets.length} ticket
+            {filteredTickets.length !== 1 ? "s" : ""}
+            {displayCount < filteredTickets.length &&
+              ` · Showing ${displayCount}`}
+          </p>
+        </div>
+        <button
+          onClick={() => loadTickets()}
+          className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+        >
+          <RefreshCw className="w-3 h-3" />
+          Refresh
+        </button>
       </div>
 
       {/* Status Filter Pills */}
@@ -325,11 +302,17 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
           <button
             key={item.value}
             onClick={() => setStatusFilter(item.value)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${statusFilter === item.value ? "bg-[#1B5A8C] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              statusFilter === item.value
+                ? "bg-[#1B5A8C] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
           >
             {item.label}
             <span
-              className={`tabular-nums ${statusFilter === item.value ? "text-white/60" : "text-gray-400"}`}
+              className={`tabular-nums ${
+                statusFilter === item.value ? "text-white/60" : "text-gray-400"
+              }`}
             >
               {item.count}
             </span>
@@ -357,7 +340,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
             <p className="text-xs text-gray-500">No tickets found</p>
             <p className="text-xs text-gray-400 mt-1">
               {statusFilter === "all"
-                ? "Your history will appear here"
+                ? "Ticket history will appear here"
                 : `No ${statusFilter} tickets`}
             </p>
           </div>
@@ -377,7 +360,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
                 {(dateTickets as any[]).map((ticket) => (
                   <div
                     key={ticket._id}
-                    className={`flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-lg hover:bg-gray-50/50 transition-colors group ${animatingTicketId === ticket._id ? "animate-in slide-in-from-right-4 fade-in duration-500 bg-[#1B5A8C]/5" : ""}`}
+                    className="flex items-center gap-3 py-2.5 px-3 -mx-3 rounded-lg hover:bg-gray-50/50 transition-colors group"
                   >
                     <div className="flex flex-col items-center flex-shrink-0">
                       <span
@@ -393,19 +376,30 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`text-xs font-semibold truncate ${ticket.status === "cancelled" ? "line-through text-gray-400" : "text-gray-900"}`}
+                          className={`text-xs font-semibold truncate ${
+                            ticket.status === "cancelled"
+                              ? "line-through text-gray-400"
+                              : "text-gray-900"
+                          }`}
                         >
-                          {ticket.student?.firstName} {ticket.student?.lastName}
+                          {ticket.student?.firstName || "Unknown"}{" "}
+                          {ticket.student?.lastName || ""}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[11px] text-gray-400 truncate">
-                          {formatTransaction(ticket.transactionType)}
+                          {formatTransaction(
+                            ticket.transactionType || "Unknown",
+                          )}
                         </span>
-                        <span className="text-[11px] text-gray-300">•</span>
-                        <span className="text-[11px] text-gray-400 truncate">
-                          {ticket.student?.schoolId}
-                        </span>
+                        {ticket.student?.schoolId && (
+                          <>
+                            <span className="text-[11px] text-gray-300">•</span>
+                            <span className="text-[11px] text-gray-400 truncate">
+                              {ticket.student.schoolId}
+                            </span>
+                          </>
+                        )}
                         {ticket.servedBy && (
                           <>
                             <span className="text-[11px] text-gray-300">•</span>
@@ -430,7 +424,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       </div>
 
       {/* Load More */}
-      {(hasMoreTickets || displayCount < filteredTickets.length) && (
+      {hasMore && (
         <div className="pt-2 pb-4 text-center">
           <button
             onClick={handleLoadMore}
@@ -439,12 +433,12 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
           >
             {isLoadingMore ? (
               <>
-                <div className="w-3.5 h-3.5 border-2 border-gray-200 border-t-[#1B5A8C] rounded-full animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Loading...
               </>
             ) : (
               <>
-                Load older tickets
+                Load more ({filteredTickets.length - displayCount} remaining)
                 <ChevronDown className="w-3.5 h-3.5" />
               </>
             )}
