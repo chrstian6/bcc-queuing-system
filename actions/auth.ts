@@ -271,6 +271,17 @@ export async function getSession() {
   try {
     const session = await auth();
 
+    console.log("🔍 getSession called:", {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      staffId: session?.user?.staffId,
+      staffRole: session?.user?.staffRole,
+      roleName: session?.user?.roleName,
+      role: session?.user?.role,
+      email: session?.user?.email,
+      name: session?.user?.name,
+    });
+
     if (!session) {
       return { success: false, error: "No session found", session: null };
     }
@@ -316,6 +327,12 @@ export async function checkAuth(requiredRole?: "admin" | "staff") {
         }
       }
     }
+
+    console.log("✅ checkAuth passed:", {
+      role: session.user?.role,
+      roleName: session.user?.roleName,
+      staffId: session.user?.staffId,
+    });
 
     return {
       isAuthenticated: true,

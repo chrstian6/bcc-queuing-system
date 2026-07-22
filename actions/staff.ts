@@ -36,7 +36,8 @@ interface StaffResponse {
 
 /**
  * Generate a simple, easy-to-read temporary password
- * Format: word + number (e.g., "blue47", "happy23")
+ * Format: word + number (e.g., "blue147", "happy523", "fox894")
+ * Minimum length: word (3+ chars) + number (3 digits) = 6+ characters
  */
 function generateSimplePassword(): string {
   const words = [
@@ -83,14 +84,23 @@ function generateSimplePassword(): string {
   ];
 
   const word = words[Math.floor(Math.random() * words.length)];
-  const number = Math.floor(Math.random() * 90) + 10; // 10-99
-  return `${word}${number}`;
+  const number = Math.floor(Math.random() * 900) + 100; // 100-999 (3 digits)
+  const password = `${word}${number}`;
+
+  console.log(
+    "🔑 Generated password:",
+    password,
+    "(length:",
+    password.length + ")",
+  );
+  return password;
 }
 
 export async function createStaffAccount(
   data: CreateStaffData,
 ): Promise<StaffResponse> {
   try {
+    // ── Validation ──────────────────────────────────────
     if (
       !data.facultyId ||
       !data.firstName ||
@@ -109,9 +119,11 @@ export async function createStaffAccount(
       return { success: false, error: "Window number is required for cashier" };
     }
 
+    // ── Database Connection ─────────────────────────────
     await connectDB();
+    console.log("✅ Connected to database");
 
-    // Check if email already exists in Staff collection
+    // ── Check for existing accounts ─────────────────────
     const existingStaffEmail = await Staff.findOne({
       email: data.email.toLowerCase(),
     });
@@ -122,7 +134,6 @@ export async function createStaffAccount(
       };
     }
 
-    // Check if email already exists in User (Admin) collection
     const existingUserEmail = await User.findOne({
       email: data.email.toLowerCase(),
     });
@@ -133,7 +144,6 @@ export async function createStaffAccount(
       };
     }
 
-    // Check if faculty ID already exists in Staff collection
     const existingStaffFacultyId = await Staff.findOne({
       facultyId: data.facultyId,
     });
@@ -144,8 +154,12 @@ export async function createStaffAccount(
       };
     }
 
+    console.log("✅ No duplicate accounts found");
+
+    // ── Generate password ───────────────────────────────
     const tempPassword = generateSimplePassword();
 
+    // ── Create staff account ────────────────────────────
     const staffData: any = {
       facultyId: data.facultyId,
       firstName: data.firstName,
@@ -162,24 +176,62 @@ export async function createStaffAccount(
       staffData.cashierWindow = data.cashierWindow;
     }
 
+    console.log("💾 Saving staff account to database...");
     const staff = new Staff(staffData);
     await staff.save();
+    console.log("✅ Staff account saved with ID:", staff.staffId);
 
+    // ── Send welcome email ──────────────────────────────
+    console.log("📧 Attempting to send welcome email to:", staff.email);
+
+    let emailSent = false;
     try {
-      await sendWelcomeEmail({
+      emailSent = await sendWelcomeEmail({
         email: staff.email,
         firstName: staff.firstName,
         roleName: staff.roleName,
         tempPassword,
         staffId: staff.staffId,
       });
-    } catch (emailError) {
-      console.error("Failed to send welcome email:", emailError);
+
+      if (emailSent) {
+        console.log("✅ Welcome email sent successfully to:", staff.email);
+      } else {
+        console.error("❌ sendWelcomeEmail returned false for:", staff.email);
+      }
+    } catch (emailError: any) {
+      console.error("❌ Failed to send welcome email:");
+      console.error("  Error name:", emailError.name);
+      console.error("  Error message:", emailError.message);
+      console.error("  Error code:", emailError.code);
+      console.error("  Error command:", emailError.command);
+
+      if (emailError.stack) {
+        console.error(
+          "  Stack trace:",
+          emailError.stack.split("\n").slice(0, 3).join("\n"),
+        );
+      }
+
+      // Check for common SMTP errors
+      if (emailError.code === "EAUTH") {
+        console.error(
+          "  → Authentication failed. Check SMTP_USER and SMTP_PASS in .env.local",
+        );
+      } else if (emailError.code === "ESOCKET") {
+        console.error(
+          "  → Connection failed. Check SMTP_HOST and SMTP_PORT in .env.local",
+        );
+      } else if (emailError.code === "EENVELOPE") {
+        console.error("  → Invalid email address or sender configuration");
+      }
     }
 
+    // ── Revalidate paths ────────────────────────────────
     revalidatePath("/admin/users");
     revalidatePath("/admin/users/staff");
 
+    // ── Prepare response ────────────────────────────────
     const responseStaff: any = {
       staffId: staff.staffId,
       facultyId: staff.facultyId,
@@ -196,9 +248,17 @@ export async function createStaffAccount(
       responseStaff.cashierWindow = staff.cashierWindow;
     }
 
-    return { success: true, staff: responseStaff };
+    return {
+      success: true,
+      staff: responseStaff,
+      // Only show email warning if it failed
+      error: emailSent
+        ? undefined
+        : "Account created but welcome email could not be sent. Please check email configuration.",
+    };
   } catch (error: any) {
-    console.error("Error creating staff account:", error);
+    console.error("❌ Error creating staff account:", error);
+    console.error("  Error type:", error.constructor.name);
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
@@ -223,6 +283,10 @@ export async function createStaffAccount(
     };
   }
 }
+
+// ────────────────────────────────────────────────────────
+// Other functions remain the same
+// ────────────────────────────────────────────────────────
 
 export async function getAllStaff() {
   try {
