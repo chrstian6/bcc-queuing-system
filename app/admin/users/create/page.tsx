@@ -20,7 +20,7 @@ export default async function CreateUserPage() {
           Create Staff Account
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Create accounts for Registrar, Dean, DSDW, and Cashier staff
+          Create accounts for Registrar and Cashier staff
         </p>
       </div>
 

@@ -7,6 +7,7 @@ declare module "next-auth" {
     staffId?: string;
     facultyId?: string;
     staffRole?: string;
+    roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
     schoolId?: string;
@@ -24,6 +25,7 @@ declare module "next-auth" {
       staffId?: string;
       facultyId?: string;
       staffRole?: string;
+      roleName?: string; // ADD THIS
       cashierWindow?: string;
       mustChangePassword?: boolean;
       schoolId?: string;
@@ -39,6 +41,7 @@ declare module "next-auth/jwt" {
     staffId?: string;
     facultyId?: string;
     staffRole?: string;
+    roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
     schoolId?: string;

@@ -1,7 +1,7 @@
 // components/registrar/ActiveQueueView.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Users,
@@ -11,6 +11,8 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
 import {
@@ -27,7 +29,7 @@ interface ActiveQueueViewProps {
 
 export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [staffId, setStaffId] = useState<string | null>(null);
   const [servingTicket, setServingTicket] = useState<any>(null);
   const [waitingTickets, setWaitingTickets] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -35,39 +37,49 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [department]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
+      setLoadError(null);
 
       const sessionResult = await getSession();
       if (!sessionResult.success || !sessionResult.session) {
         router.push("/?error=unauthorized");
         return;
       }
-      setUser(sessionResult.session.user);
 
-      const staffId = sessionResult.session.user?.staffId;
-      if (!staffId) {
-        setError("Staff ID not found");
+      const userStaffId = sessionResult.session.user?.staffId;
+      if (!userStaffId) {
+        setLoadError("Staff ID not found. Please log in again.");
+        setIsLoading(false);
         return;
       }
 
-      // Load ALL staff's tickets (both pending and serving)
-      const ticketsResult = await getStaffTickets(staffId);
+      setStaffId(userStaffId);
+
+      // Load ALL staff's tickets
+      const ticketsResult = await getStaffTickets(userStaffId);
 
       if (ticketsResult && ticketsResult.success) {
-        // Separate serving from waiting (pending)
-        const serving = ticketsResult.tickets.find(
-          (t: any) => t.status === "serving" && t.servedBy === staffId,
+        const tickets = ticketsResult.tickets || [];
+
+        // Find ticket being served by THIS staff member
+        const serving = tickets.find(
+          (t: any) => t.status === "serving" && t.servedBy === userStaffId,
         );
-        const waiting = ticketsResult.tickets.filter(
-          (t: any) => t.status === "pending",
-        );
+
+        // Find pending tickets for this department
+        const waiting = tickets
+          .filter(
+            (t: any) => t.status === "pending" && t.department === department,
+          )
+          .sort((a: any, b: any) => {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return dateA - dateB;
+          });
 
         setServingTicket(serving || null);
         setWaitingTickets(waiting);
@@ -76,20 +88,38 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         setWaitingTickets([]);
       }
 
-      // Load staff stats
-      const statsResult = await getStaffDailyStats(staffId);
-      if (statsResult.success) {
-        setStats(statsResult.stats);
+      // Load staff stats (don't block if this fails)
+      try {
+        const statsResult = await getStaffDailyStats(userStaffId);
+        if (statsResult?.success) {
+          setStats(statsResult.stats);
+        }
+      } catch (statsError) {
+        console.error("Error loading stats:", statsError);
+        // Non-critical, continue without stats
       }
-    } catch (error) {
-      console.error("Error loading queue:", error);
+    } catch (err) {
+      console.error("Error loading queue:", err);
+      setLoadError("Failed to load queue data");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [department, router]);
+
+  // Initial load and auto-refresh
+  useEffect(() => {
+    loadData();
+
+    // Auto-refresh every 15 seconds
+    const interval = setInterval(() => {
+      loadData();
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   const handleServeNext = async (ticketNumber: string) => {
-    if (!user?.staffId) {
+    if (!staffId) {
       setError("Staff ID not found. Please login again.");
       return;
     }
@@ -99,15 +129,16 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
     setSuccess("");
 
     try {
-      const result = await serveTicket(ticketNumber, user.staffId);
+      const result = await serveTicket(ticketNumber, staffId);
 
       if (result.success) {
         setSuccess(`Now serving ticket #${ticketNumber}`);
-        loadData();
+        await loadData();
       } else {
         setError(result.error || "Failed to serve ticket");
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Error serving ticket:", err);
       setError("Failed to serve ticket");
     } finally {
       setIsProcessing(false);
@@ -115,7 +146,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   };
 
   const handleComplete = async () => {
-    if (!servingTicket || !user?.staffId) return;
+    if (!servingTicket || !staffId) return;
 
     setIsProcessing(true);
     setError("");
@@ -124,16 +155,17 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
     try {
       const result = await completeServedTicket(
         servingTicket.ticketNumber,
-        user.staffId,
+        staffId,
       );
 
       if (result.success) {
         setSuccess(`Ticket #${servingTicket.ticketNumber} completed!`);
-        loadData();
+        await loadData();
       } else {
         setError(result.error || "Failed to complete ticket");
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Error completing ticket:", err);
       setError("Failed to complete ticket");
     } finally {
       setIsProcessing(false);
@@ -152,11 +184,12 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
       if (result.success) {
         setSuccess(`Ticket #${servingTicket.ticketNumber} cancelled`);
-        loadData();
+        await loadData();
       } else {
         setError(result.error || "Failed to cancel ticket");
       }
-    } catch (error) {
+    } catch (err) {
+      console.error("Error cancelling ticket:", err);
       setError("Failed to cancel ticket");
     } finally {
       setIsProcessing(false);
@@ -166,6 +199,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-700",
+      waiting: "bg-yellow-100 text-yellow-700",
       serving: "bg-blue-100 text-blue-700",
       completed: "bg-green-100 text-green-700",
       cancelled: "bg-red-100 text-red-700",
@@ -176,7 +210,25 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B5A8C]"></div>
+        <Loader2 className="w-8 h-8 animate-spin text-[#1B5A8C]" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-4">
+        <AlertCircle className="w-12 h-12 text-red-400" />
+        <p className="text-sm text-gray-500 font-['Plus_Jakarta_Sans']">
+          {loadError}
+        </p>
+        <button
+          onClick={loadData}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-['Plus_Jakarta_Sans']"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Try Again
+        </button>
       </div>
     );
   }
@@ -190,7 +242,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
             My Queue
           </h2>
           <p className="text-gray-500 mt-1 font-['Plus_Jakarta_Sans']">
-            {stats ? `${stats.ticketsServed} served today` : ""}
+            {stats ? `${stats.ticketsServed || 0} served today` : ""}
             {stats?.nextTicketNumber
               ? ` • Next ticket: #${stats.nextTicketNumber}`
               : ""}
@@ -207,7 +259,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
       {/* Messages */}
       {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
           <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
           <p className="text-sm text-green-700 font-['Plus_Jakarta_Sans']">
             {success}
@@ -215,7 +267,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         </div>
       )}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
           <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-sm text-red-700 font-['Plus_Jakarta_Sans']">
             {error}
@@ -225,7 +277,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
       {/* Now Serving Section */}
       {servingTicket ? (
-        <div className="bg-gradient-to-br from-[#1B5A8C] to-[#0B3B5F] rounded-xl p-6 text-white">
+        <div className="bg-gradient-to-br from-[#1B5A8C] to-[#0B3B5F] rounded-xl p-6 text-white animate-in fade-in duration-300">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             <h3 className="text-sm font-semibold uppercase tracking-wider text-white/80 font-['Plus_Jakarta_Sans']">
@@ -242,18 +294,19 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
               </div>
               <div className="min-w-0">
                 <p className="text-lg font-semibold font-['Plus_Jakarta_Sans'] truncate">
-                  {servingTicket.student?.firstName}{" "}
-                  {servingTicket.student?.lastName}
+                  {servingTicket.student?.firstName || "Unknown"}{" "}
+                  {servingTicket.student?.lastName || ""}
                 </p>
                 <p className="text-sm text-white/70 font-['Plus_Jakarta_Sans']">
                   {servingTicket.transactionType
                     ?.replace(/-/g, " ")
-                    .replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                    .replace(/\b\w/g, (l: string) => l.toUpperCase()) ||
+                    "Unknown"}
                 </p>
                 <p className="text-xs text-white/50 mt-0.5 font-['Plus_Jakarta_Sans']">
-                  {servingTicket.student?.schoolId} •{" "}
-                  {servingTicket.student?.year} -{" "}
-                  {servingTicket.student?.section}
+                  {servingTicket.student?.schoolId || "N/A"} •{" "}
+                  {servingTicket.student?.year || "?"} -{" "}
+                  {servingTicket.student?.section || "?"}
                 </p>
               </div>
             </div>
@@ -287,7 +340,9 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
             No Active Ticket
           </h3>
           <p className="text-sm text-gray-500 font-['Plus_Jakarta_Sans']">
-            Serve a ticket from the waiting queue below
+            {waitingTickets.length > 0
+              ? "Serve a ticket from the waiting queue below"
+              : "No tickets in queue. Waiting for new tickets..."}
           </p>
         </div>
       )}
@@ -309,7 +364,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                 No waiting tickets
               </p>
               <p className="text-sm text-gray-400 mt-1 font-['Plus_Jakarta_Sans']">
-                New tickets assigned to you will appear here
+                New tickets for this department will appear here
               </p>
             </div>
           ) : (
@@ -332,36 +387,42 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold text-gray-900 font-['Plus_Jakarta_Sans']">
-                            {ticket.student?.firstName}{" "}
-                            {ticket.student?.lastName}
+                            {ticket.student?.firstName || "Unknown"}{" "}
+                            {ticket.student?.lastName || ""}
                           </p>
                           <span
                             className={`px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0 font-['Plus_Jakarta_Sans'] ${getStatusBadge(ticket.status)}`}
                           >
-                            waiting
+                            {ticket.status}
                           </span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
                           <p className="text-xs text-gray-500 font-['Plus_Jakarta_Sans']">
                             {ticket.transactionType
                               ?.replace(/-/g, " ")
-                              .replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                              .replace(/\b\w/g, (l: string) =>
+                                l.toUpperCase(),
+                              ) || "Unknown"}
                           </p>
-                          <p className="text-xs text-gray-400 font-['Plus_Jakarta_Sans']">
-                            {ticket.student?.schoolId}
-                          </p>
-                          <div className="flex items-center gap-1 text-xs text-gray-400">
-                            <Clock className="w-3 h-3" />
-                            <span className="font-['Plus_Jakarta_Sans']">
-                              {new Date(ticket.createdAt).toLocaleTimeString(
-                                [],
-                                {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )}
-                            </span>
-                          </div>
+                          {ticket.student?.schoolId && (
+                            <p className="text-xs text-gray-400 font-['Plus_Jakarta_Sans']">
+                              {ticket.student.schoolId}
+                            </p>
+                          )}
+                          {ticket.createdAt && (
+                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                              <Clock className="w-3 h-3" />
+                              <span className="font-['Plus_Jakarta_Sans']">
+                                {new Date(ticket.createdAt).toLocaleTimeString(
+                                  [],
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
