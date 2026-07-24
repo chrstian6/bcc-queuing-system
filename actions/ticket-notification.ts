@@ -76,8 +76,8 @@ export async function notifyNextInLine(
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const nextTicket = await Ticket.findOne({
-      department,
-      status: "pending",
+      department: department as any,
+      status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
     })
       .sort({ createdAt: 1 })
@@ -132,8 +132,8 @@ export async function notifyNextTwoInLine(
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const nextTickets = await Ticket.find({
-      department,
-      status: "pending",
+      department: department as any,
+      status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
     })
       .sort({ createdAt: 1 })
@@ -174,6 +174,112 @@ export async function notifyNextTwoInLine(
     return { success: true, notified: notifiedCount > 0 };
   } catch (error) {
     console.error("Error notifying next two:", error);
+    return { success: false, error: "Failed to send notifications" };
+  }
+}
+
+/**
+ * Notify a skipped/cancelled ticket holder
+ */
+export async function notifySkipped(
+  ticketNumber: string,
+  staffName?: string,
+): Promise<NotificationResult> {
+  try {
+    await connectDB();
+
+    const ticket = await Ticket.findOne({
+      ticketNumber,
+      status: "cancelled",
+    })
+      .select("ticketNumber ticketId transactionType requester student")
+      .lean();
+
+    if (!ticket) {
+      return { success: false, error: "Ticket not found" };
+    }
+
+    const ticketData = ticket as any;
+    const recipientEmail = ticketData.requester?.email;
+
+    if (!recipientEmail) {
+      return { success: false, error: "No email provided" };
+    }
+
+    const studentName =
+      `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
+
+    const emailSent = await sendTicketNotificationEmail({
+      email: recipientEmail,
+      studentName: studentName || "Student",
+      ticketNumber: ticketData.ticketNumber,
+      ticketId: ticketData.ticketId,
+      transactionType: ticketData.transactionType,
+      queuePosition: 0,
+      notificationType: "skipped",
+      staffName,
+    });
+
+    return { success: true, notified: emailSent };
+  } catch (error) {
+    console.error("Error notifying skipped:", error);
+    return { success: false, error: "Failed to send notification" };
+  }
+}
+
+/**
+ * Notify all waiting tickets in a department
+ */
+export async function notifyAllWaiting(
+  department: string,
+): Promise<NotificationResult> {
+  try {
+    await connectDB();
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const waitingTickets = await Ticket.find({
+      department: department as any,
+      status: "pending" as any,
+      createdAt: { $gte: today, $lt: tomorrow },
+    })
+      .sort({ createdAt: 1 })
+      .select("ticketNumber ticketId transactionType requester student")
+      .lean();
+
+    if (!waitingTickets || waitingTickets.length === 0) {
+      return { success: false, error: "No pending tickets" };
+    }
+
+    let notifiedCount = 0;
+
+    for (let i = 0; i < waitingTickets.length; i++) {
+      const ticketData = waitingTickets[i] as any;
+      const recipientEmail = ticketData.requester?.email;
+
+      if (recipientEmail) {
+        const studentName =
+          `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
+
+        await sendTicketNotificationEmail({
+          email: recipientEmail,
+          studentName: studentName || "Student",
+          ticketNumber: ticketData.ticketNumber,
+          ticketId: ticketData.ticketId,
+          transactionType: ticketData.transactionType,
+          queuePosition: i + 1,
+        });
+
+        notifiedCount++;
+      }
+    }
+
+    return { success: true, notified: notifiedCount > 0 };
+  } catch (error) {
+    console.error("Error notifying all waiting:", error);
     return { success: false, error: "Failed to send notifications" };
   }
 }

@@ -1,18 +1,34 @@
 // models/Ticket.ts
 import mongoose, { Document, Model } from "mongoose";
+import {
+  YearLevel,
+  Campus,
+  TransactionType,
+  TicketStatus,
+  Department,
+  RequesterType,
+  Relationship,
+  Suffix,
+  VALID_TRANSACTION_TYPES,
+  VALID_STATUSES,
+  VALID_DEPARTMENTS,
+  VALID_REQUESTER_TYPES,
+  VALID_RELATIONSHIPS,
+  VALID_SUFFIXES,
+} from "@/types/ticket";
 
 export interface IStudent {
   schoolId: string;
   firstName: string;
   lastName: string;
   middleName: string;
-  suffix: string;
-  year: string;
-  section: string;
+  suffix: Suffix | "";
+  year: YearLevel;
+  campus: Campus;
 }
 
 export interface IRequester {
-  type: "student" | "guardian";
+  type: RequesterType;
   email: string;
   contactNumber: string;
 }
@@ -21,11 +37,11 @@ export interface IGuardian {
   firstName: string;
   lastName: string;
   middleName: string;
-  relationship: string;
+  relationship: Relationship | "";
 }
 
 export interface IStatusTracking {
-  status: string;
+  status: TicketStatus;
   timestamp: Date;
   changedBy?: string;
 }
@@ -33,45 +49,33 @@ export interface IStatusTracking {
 export interface ITicket extends Document {
   ticketNumber: string;
   ticketId: string;
-  transactionType: string;
-  department: string;
-  status: "pending" | "serving" | "completed" | "cancelled";
+  transactionType: TransactionType;
+  transactionDescription?: string;
+  amount: number;
+  department: Department;
+  status: TicketStatus;
   student: IStudent;
   requester: IRequester;
   guardian?: IGuardian;
   assignedTo?: string;
   servedBy?: string;
   servingWindow?: string;
-  // Time tracking
   createdAt: Date;
   updatedAt: Date;
   servedAt?: Date;
   completedAt?: Date;
   cancelledAt?: Date;
-  // Status history for tracking
   statusHistory: IStatusTracking[];
-  // Queue metrics
   waitTime?: number;
   serviceTime?: number;
   totalTime?: number;
 }
 
-const VALID_TRANSACTION_TYPES = [
-  "tor",
-  "coe",
-  "request-grades",
-  "enrollment-fees",
-  "assessment",
-  "exam-fees",
-  "payments",
-  "certificate",
-];
-
 const StatusTrackingSchema = new mongoose.Schema<IStatusTracking>(
   {
     status: {
       type: String,
-      enum: ["pending", "serving", "completed", "cancelled"],
+      enum: [...VALID_STATUSES],
       required: true,
     },
     timestamp: {
@@ -100,21 +104,51 @@ const ticketSchema = new mongoose.Schema<ITicket>(
     transactionType: {
       type: String,
       enum: {
-        values: VALID_TRANSACTION_TYPES,
+        values: [...VALID_TRANSACTION_TYPES],
         message: "{VALUE} is not a valid transaction type",
       },
       required: [true, "Transaction type is required"],
     },
+    transactionDescription: {
+      type: String,
+      trim: true,
+      maxlength: [200, "Description cannot exceed 200 characters"],
+      validate: {
+        validator: function (this: any, value: string) {
+          const transactionType = (this as any).transactionType;
+          if (
+            transactionType === "other-school-fees" &&
+            (!value || value.trim().length === 0)
+          ) {
+            return false;
+          }
+          return true;
+        },
+        message: "Description is required for Other School Fees",
+      },
+    },
+    amount: {
+      type: Number,
+      required: [true, "Amount is required"],
+      min: [0.01, "Amount must be greater than 0"],
+      max: [999999999999, "Amount exceeds maximum limit"],
+      validate: {
+        validator: function (value: number) {
+          return /^\d+(\.\d{1,2})?$/.test(value.toString());
+        },
+        message: "Amount must be a valid decimal with up to 2 decimal places",
+      },
+    },
     department: {
       type: String,
-      enum: ["registrar", "dean", "dsdw", "cashier", "general"],
-      default: "general",
+      enum: [...VALID_DEPARTMENTS],
+      default: "cashier",
       index: true,
     },
     status: {
       type: String,
       enum: {
-        values: ["pending", "serving", "completed", "cancelled"],
+        values: [...VALID_STATUSES],
         message: "{VALUE} is not a valid status",
       },
       default: "pending",
@@ -136,7 +170,7 @@ const ticketSchema = new mongoose.Schema<ITicket>(
     student: {
       schoolId: {
         type: String,
-        required: [true, "School ID is required"],
+        default: "",
         trim: true,
       },
       firstName: {
@@ -156,22 +190,22 @@ const ticketSchema = new mongoose.Schema<ITicket>(
       },
       suffix: {
         type: String,
+        enum: [...VALID_SUFFIXES],
         default: "",
-        trim: true,
       },
       year: {
         type: String,
         required: [true, "Year level is required"],
       },
-      section: {
+      campus: {
         type: String,
-        required: [true, "Section is required"],
+        required: [true, "Campus is required"],
       },
     },
     requester: {
       type: {
         type: String,
-        enum: ["student", "guardian"],
+        enum: [...VALID_REQUESTER_TYPES],
         required: [true, "Requester type is required"],
       },
       email: {
@@ -187,33 +221,34 @@ const ticketSchema = new mongoose.Schema<ITicket>(
       },
     },
     guardian: {
-      firstName: {
-        type: String,
-        default: "",
-        trim: true,
+      type: {
+        firstName: {
+          type: String,
+          default: "",
+          trim: true,
+        },
+        lastName: {
+          type: String,
+          default: "",
+          trim: true,
+        },
+        middleName: {
+          type: String,
+          default: "",
+          trim: true,
+        },
+        relationship: {
+          type: String,
+          enum: [...VALID_RELATIONSHIPS, ""],
+          default: "",
+        },
       },
-      lastName: {
-        type: String,
-        default: "",
-        trim: true,
-      },
-      middleName: {
-        type: String,
-        default: "",
-        trim: true,
-      },
-      relationship: {
-        type: String,
-        default: "",
-        trim: true,
-      },
+      default: undefined,
     },
-    // Status history tracking
     statusHistory: {
       type: [StatusTrackingSchema],
       default: [],
     },
-    // Time tracking timestamps
     servedAt: {
       type: Date,
       default: null,
@@ -226,7 +261,6 @@ const ticketSchema = new mongoose.Schema<ITicket>(
       type: Date,
       default: null,
     },
-    // Queue metrics (calculated)
     waitTime: {
       type: Number,
       default: null,
@@ -245,7 +279,7 @@ const ticketSchema = new mongoose.Schema<ITicket>(
   },
 );
 
-// Indexes for efficient queries
+// Indexes
 ticketSchema.index({ ticketNumber: 1 });
 ticketSchema.index({ status: 1, createdAt: 1 });
 ticketSchema.index({ transactionType: 1, createdAt: 1 });
@@ -256,112 +290,111 @@ ticketSchema.index({ department: 1, status: 1, createdAt: 1 });
 ticketSchema.index({ assignedTo: 1, status: 1 });
 ticketSchema.index({ servedBy: 1, createdAt: 1 });
 
-// Pre-save hook to track status changes
+// Virtual for formatted amount
+ticketSchema.virtual("formattedAmount").get(function () {
+  const doc = this as unknown as ITicket;
+  if (!doc.amount) return "₱0.00";
+  return `₱${doc.amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+});
+
+// Pre-save hook
 ticketSchema.pre("save", function (next) {
-  if (this.isModified("status")) {
-    // Add to status history
-    this.statusHistory.push({
-      status: this.status,
+  const doc = this as unknown as ITicket;
+
+  if (doc.isModified("status")) {
+    doc.statusHistory.push({
+      status: doc.status,
       timestamp: new Date(),
       changedBy: "system",
     });
 
-    // Set timestamps based on status
     const now = new Date();
-    if (this.status === "serving") {
-      this.servedAt = now;
-      // Calculate wait time
-      if (this.createdAt) {
-        this.waitTime = Math.round(
-          (now.getTime() - this.createdAt.getTime()) / 1000,
+    if (doc.status === "serving") {
+      doc.servedAt = now;
+      if (doc.createdAt) {
+        doc.waitTime = Math.round(
+          (now.getTime() - doc.createdAt.getTime()) / 1000,
         );
       }
-    } else if (this.status === "completed") {
-      this.completedAt = now;
-      // Calculate service time
-      if (this.servedAt) {
-        this.serviceTime = Math.round(
-          (now.getTime() - this.servedAt.getTime()) / 1000,
+    } else if (doc.status === "completed") {
+      doc.completedAt = now;
+      if (doc.servedAt) {
+        doc.serviceTime = Math.round(
+          (now.getTime() - doc.servedAt.getTime()) / 1000,
         );
       }
-      // Calculate total time
-      if (this.createdAt) {
-        this.totalTime = Math.round(
-          (now.getTime() - this.createdAt.getTime()) / 1000,
+      if (doc.createdAt) {
+        doc.totalTime = Math.round(
+          (now.getTime() - doc.createdAt.getTime()) / 1000,
         );
       }
-    } else if (this.status === "cancelled") {
-      this.cancelledAt = now;
-      // Calculate total time if cancelled
-      if (this.createdAt) {
-        this.totalTime = Math.round(
-          (now.getTime() - this.createdAt.getTime()) / 1000,
+    } else if (doc.status === "cancelled") {
+      doc.cancelledAt = now;
+      if (doc.createdAt) {
+        doc.totalTime = Math.round(
+          (now.getTime() - doc.createdAt.getTime()) / 1000,
         );
       }
     }
   }
 });
 
-// Virtual for full name
+// Virtuals
 ticketSchema.virtual("student.fullName").get(function () {
-  const { firstName, middleName, lastName, suffix } = this.student;
+  const doc = this as unknown as ITicket;
+  const { firstName, middleName, lastName, suffix } = doc.student;
   let fullName = `${firstName} ${middleName ? middleName + " " : ""}${lastName}`;
   if (suffix) fullName += ` ${suffix}`;
   return fullName.trim();
 });
 
-// Virtual for guardian full name
 ticketSchema.virtual("guardian.fullName").get(function () {
-  if (!this.guardian) return "";
-  const { firstName, middleName, lastName } = this.guardian;
+  const doc = this as unknown as ITicket;
+  if (!doc.guardian) return "";
+  const { firstName, middleName, lastName } = doc.guardian;
   return `${firstName} ${middleName ? middleName + " " : ""}${lastName}`.trim();
 });
 
-// Virtual for formatted wait time
 ticketSchema.virtual("formattedWaitTime").get(function () {
-  if (!this.waitTime) return "N/A";
-  const minutes = Math.floor(this.waitTime / 60);
-  const seconds = this.waitTime % 60;
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
+  const doc = this as unknown as ITicket;
+  if (!doc.waitTime) return "N/A";
+  const minutes = Math.floor(doc.waitTime / 60);
+  const seconds = doc.waitTime % 60;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 });
 
-// Virtual for formatted service time
 ticketSchema.virtual("formattedServiceTime").get(function () {
-  if (!this.serviceTime) return "N/A";
-  const minutes = Math.floor(this.serviceTime / 60);
-  const seconds = this.serviceTime % 60;
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
+  const doc = this as unknown as ITicket;
+  if (!doc.serviceTime) return "N/A";
+  const minutes = Math.floor(doc.serviceTime / 60);
+  const seconds = doc.serviceTime % 60;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 });
 
-// Virtual for formatted total time
 ticketSchema.virtual("formattedTotalTime").get(function () {
-  if (!this.totalTime) return "N/A";
-  const minutes = Math.floor(this.totalTime / 60);
-  const seconds = this.totalTime % 60;
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
+  const doc = this as unknown as ITicket;
+  if (!doc.totalTime) return "N/A";
+  const minutes = Math.floor(doc.totalTime / 60);
+  const seconds = doc.totalTime % 60;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 });
 
-// Virtual for current status duration
 ticketSchema.virtual("currentStatusDuration").get(function () {
-  const lastStatus = this.statusHistory[this.statusHistory.length - 1];
+  const doc = this as unknown as ITicket;
+  const lastStatus = doc.statusHistory[doc.statusHistory.length - 1];
   if (!lastStatus) return 0;
   return Math.round((Date.now() - lastStatus.timestamp.getTime()) / 1000);
 });
 
-// Ensure virtuals are included in JSON
 ticketSchema.set("toJSON", { virtuals: true });
 ticketSchema.set("toObject", { virtuals: true });
 
-// Delete existing model to force recompilation
 if (mongoose.models.Ticket) {
   delete mongoose.models.Ticket;
 }

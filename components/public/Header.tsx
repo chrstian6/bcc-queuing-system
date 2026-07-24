@@ -1,335 +1,455 @@
 // components/public/Header.tsx
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import { Geist } from "next/font/google";
+import { useRouter } from "next/navigation";
+import { Plus_Jakarta_Sans, Fraunces } from "next/font/google";
+import { useState, useEffect, useRef } from "react";
+import gsap from "gsap";
 
-const geist = Geist({
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-geist",
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-plus-jakarta",
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  weight: ["400", "500", "600", "700", "800", "900"],
+  style: ["normal", "italic"],
 });
 
 interface HeaderProps {
-  logoSrc?: string;
-  logoAlt?: string;
   onLoginClick?: () => void;
 }
 
-export default function Header({
-  logoSrc = "/images/bcc-logo-3.png",
-  logoAlt = "Binalbagan Catholic College Logo",
-  onLoginClick,
-}: HeaderProps) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isHoveringMenu, setIsHoveringMenu] = useState(false);
+export default function Header({ onLoginClick }: HeaderProps) {
+  const router = useRouter();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isAtFeatures, setIsAtFeatures] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const loginButtonRef = useRef<HTMLButtonElement>(null);
+  const hoverBgRef = useRef<HTMLDivElement>(null);
+  const oldTextRef = useRef<HTMLDivElement>(null);
+  const newTextRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
 
-  const navItems = [
-    {
-      label: "Live Queue",
-      href: "/live-queue",
-      icon: (
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-          />
-        </svg>
-      ),
-    },
-    {
-      label: "Get a Ticket",
-      href: "/public/schedule",
-      icon: (
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          />
-        </svg>
-      ),
-    },
-    {
-      label: "Track Ticket",
-      href: "/track",
-      icon: (
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M15 5v2m0 4v2m0 4v2M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"
-          />
-        </svg>
-      ),
-    },
-  ];
+  // Handle login click - use onLoginClick prop if provided, otherwise navigate to login page
+  const handleLoginClick = () => {
+    if (onLoginClick) {
+      onLoginClick();
+    } else {
+      router.push("/auth/login");
+    }
+  };
+
+  // Split text into characters
+  const splitIntoCharacters = (text: string): string[] => {
+    return Array.from(text);
+  };
+
+  const textChars = splitIntoCharacters("Login");
+  const newTextChars = splitIntoCharacters("Login");
+
+  // Synced hover roll animation — old text, white bg, and new text all
+  // move together on one timeline so it reads as a single "push" motion.
+  useEffect(() => {
+    const oldText = oldTextRef.current;
+    const newText = newTextRef.current;
+    const hoverBg = hoverBgRef.current;
+    if (!oldText || !newText || !hoverBg) return;
+
+    const oldChars = oldText.querySelectorAll(".char-item");
+    const newChars = newText.querySelectorAll(".char-item");
+    if (oldChars.length === 0 || newChars.length === 0) return;
+
+    // Kill anything mid-flight so rapid hover/unhover doesn't fight itself
+    gsap.killTweensOf([hoverBg, oldChars, newChars]);
+
+    const DURATION = 0.45;
+    const EASE = "power3.inOut";
+
+    const tl = gsap.timeline();
+
+    if (isHovered) {
+      // White bg rises, old text gets pushed up & out, new text rides
+      // up into place — all starting at time 0 on the same timeline.
+      tl.to(
+        hoverBg,
+        {
+          duration: DURATION,
+          ease: EASE,
+          scaleX: 1,
+          translateY: "0%",
+        },
+        0,
+      )
+        .to(
+          oldChars,
+          {
+            duration: DURATION,
+            ease: EASE,
+            y: "-100%",
+            opacity: 0,
+            stagger: 0.02,
+          },
+          0,
+        )
+        .fromTo(
+          newChars,
+          { y: "100%", opacity: 0 },
+          {
+            duration: DURATION,
+            ease: EASE,
+            y: "0%",
+            opacity: 1,
+            stagger: 0.02,
+          },
+          0,
+        );
+    } else {
+      // Exact mirror of the above: bg recedes, new text gets pushed
+      // back down & out, old text rides back down into place.
+      tl.to(
+        hoverBg,
+        {
+          duration: DURATION,
+          ease: EASE,
+          scaleX: 0.2,
+          translateY: "200%",
+        },
+        0,
+      )
+        .to(
+          newChars,
+          {
+            duration: DURATION,
+            ease: EASE,
+            y: "100%",
+            opacity: 0,
+            stagger: { each: 0.02, from: "end" },
+          },
+          0,
+        )
+        .to(
+          oldChars,
+          {
+            duration: DURATION,
+            ease: EASE,
+            y: "0%",
+            opacity: 1,
+            stagger: { each: 0.02, from: "end" },
+          },
+          0,
+        );
+    }
+
+    return () => {
+      tl.kill();
+    };
+  }, [isHovered]);
+
+  useEffect(() => {
+    // Set initial state after mount
+    requestAnimationFrame(() => {
+      isFirstRender.current = false;
+    });
+
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const shouldBeScrolled = scrollY > 20;
+
+      const featuresSection = document.querySelector("#features-section");
+      let atFeatures = false;
+
+      if (featuresSection) {
+        const rect = featuresSection.getBoundingClientRect();
+        if (rect.top <= window.innerHeight * 0.4 && rect.bottom >= 0) {
+          atFeatures = true;
+        }
+      }
+
+      if (shouldBeScrolled !== isScrolled) {
+        setIsScrolled(shouldBeScrolled);
+      }
+
+      if (atFeatures !== isAtFeatures) {
+        setIsAtFeatures(atFeatures);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [isScrolled, isAtFeatures]);
+
+  useEffect(() => {
+    if (isFirstRender.current) return;
+
+    const header = headerRef.current;
+    const container = containerRef.current;
+
+    if (!header || !container) return;
+
+    gsap.killTweensOf(header);
+    gsap.killTweensOf(container);
+
+    const showIsland = isScrolled || isAtFeatures;
+
+    gsap.to(header, {
+      duration: 0.6,
+      ease: "power3.inOut",
+      paddingTop: showIsland ? 8 : 0,
+      paddingBottom: showIsland ? 8 : 0,
+      overwrite: "auto",
+    });
+
+    // Solid white background when scrolled
+    if (isScrolled || isAtFeatures) {
+      gsap.to(container, {
+        duration: 0.7,
+        ease: "power3.inOut",
+        width: "92%",
+        maxWidth: "900px",
+        borderRadius: 9999,
+        backgroundColor: "#ffffff",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+        borderWidth: 1,
+        borderColor: "rgba(0,0,0,0.05)",
+        paddingLeft: 6,
+        paddingRight: 6,
+        overwrite: "auto",
+      });
+    } else {
+      gsap.to(container, {
+        duration: 0.7,
+        ease: "power3.inOut",
+        width: "100%",
+        maxWidth: "100%",
+        borderRadius: 0,
+        backgroundColor: "rgba(255,255,255,0)",
+        boxShadow: "0 4px 20px rgba(0,0,0,0)",
+        borderWidth: 0,
+        borderColor: "rgba(0,0,0,0)",
+        paddingLeft: 0,
+        paddingRight: 0,
+        overwrite: "auto",
+      });
+    }
+  }, [isScrolled, isAtFeatures]);
 
   return (
-    <>
-      <header className="absolute top-0 left-0 w-full z-50 bg-transparent">
-        <div className="mx-auto px-6 md:px-8 h-[68px] flex items-center justify-between relative">
-          {/* Logo + Wordmark */}
-          <Link href="/" className="flex items-center gap-3 shrink-0 group">
-            <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
-              <Image
-                src={logoSrc}
-                alt={logoAlt}
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
-            <div className="hidden md:flex flex-col">
+    <div className={`${plusJakarta.variable} ${fraunces.variable}`}>
+      <header
+        ref={headerRef}
+        className="fixed top-0 left-0 w-full z-50 flex justify-center"
+        style={{ paddingTop: 0, paddingBottom: 0 }}
+      >
+        <div
+          ref={containerRef}
+          className="transition-shadow duration-300"
+          style={{
+            width: "100%",
+            maxWidth: "100%",
+            backgroundColor: "rgba(255,255,255,0)",
+            borderRadius: 0,
+            boxShadow: "0 4px 20px rgba(0,0,0,0)",
+            borderWidth: 0,
+            borderColor: "rgba(0,0,0,0)",
+            paddingLeft: 0,
+            paddingRight: 0,
+          }}
+        >
+          <div className="h-[56px] flex items-center justify-between relative px-4 md:px-6">
+            {/* SmartQ Logo */}
+            <Link href="/" className="flex items-center gap-3 shrink-0 group">
               <span
-                className="text-white text-sm font-semibold leading-tight tracking-[0.01em]"
-                style={{ fontFamily: "var(--font-geist-sans)" }}
-              >
-                Binalbagan Catholic College
-              </span>
-              <span
-                className="text-white/50 font-normal leading-tight mt-0.5"
+                className="font-black tracking-tight transition-colors duration-300"
                 style={{
-                  fontSize: "10px",
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  fontFamily: "var(--font-geist-sans)",
+                  fontFamily: "var(--font-fraunces)",
+                  fontSize: "clamp(18px, 1.8vw, 26px)",
+                  letterSpacing: "-0.02em",
+                  color: "#0000CC",
                 }}
               >
-                Binalbagan, Negros Occidental
+                SmartQ
               </span>
-            </div>
-          </Link>
+            </Link>
 
-          {/* Right Side - Login and Menu Button */}
-          <div className="flex items-center gap-3">
-            {/* Login Button */}
-            <button
-              onClick={onLoginClick}
-              className="hidden md:flex items-center gap-2 text-white text-[13px] font-medium tracking-wide transition-all duration-200 hover:text-white/80"
-              style={{
-                background: "transparent",
-                padding: "8px 20px",
-                fontFamily: "var(--font-geist-sans)",
-                letterSpacing: "0.03em",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+            {/* Center Navigation */}
+            <nav className="hidden md:flex items-center gap-6 lg:gap-8">
+              <Link
+                href="/"
+                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
+                style={{
+                  color: "#2A2D34",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.02em",
+                }}
               >
-                <circle
-                  cx="8"
-                  cy="5.5"
-                  r="2.5"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                />
-                <path
-                  d="M2.5 13.5C2.5 11.015 5.015 9 8 9s5.5 2.015 5.5 4.5"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                />
-              </svg>
-              Login
-            </button>
+                Home
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
+              </Link>
+              <Link
+                href="/live-queue"
+                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
+                style={{
+                  color: "#2A2D34",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Live Queue
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
+              </Link>
+              <Link
+                href="/get-ticket"
+                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
+                style={{
+                  color: "#2A2D34",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Get Ticket
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
+              </Link>
+              <Link
+                href="/live-queue"
+                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
+                style={{
+                  color: "#2A2D34",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Track
+                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
+              </Link>
+            </nav>
 
-            {/* Modern Hamburger Menu Button - Border pill with "Menu" text on hover */}
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              onMouseEnter={() => setIsHoveringMenu(true)}
-              onMouseLeave={() => setIsHoveringMenu(false)}
-              className="relative z-50 flex items-center justify-center px-4 py-2 rounded-full transition-all duration-300 border border-white/30 hover:border-white/60"
-              aria-label="Open menu"
-            >
-              <div className="relative flex items-center justify-center">
-                {/* Hamburger Icon - Fades out on hover */}
+            {/* Right Side - Shop and Login */}
+            <div className="flex items-center gap-3">
+              {/* Shop Text */}
+              <button
+                className="hidden md:flex items-center text-[13px] font-bold transition-all duration-200 hover:opacity-80"
+                style={{
+                  color: "#0000CC",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                Shop
+              </button>
+
+              {/* Login Button with Two Text Roll Effect */}
+              <button
+                ref={loginButtonRef}
+                onClick={handleLoginClick}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                className="hidden md:flex items-center justify-center text-[13px] font-bold tracking-wide transition-all duration-300 rounded-full px-5 py-2 overflow-hidden relative cursor-pointer"
+                style={{
+                  background: "#0000CC",
+                  color: "#ffffff",
+                  fontFamily: "var(--font-plus-jakarta)",
+                  letterSpacing: "0.03em",
+                  minWidth: "80px",
+                  height: "38px",
+                  border: "1px solid transparent",
+                }}
+              >
+                {/* Hover background that fills from bottom - WHITE */}
                 <div
-                  className={`absolute transition-all duration-300 ${
-                    isHoveringMenu
-                      ? "opacity-0 rotate-90"
-                      : "opacity-100 rotate-0"
-                  }`}
+                  ref={hoverBgRef}
+                  className="button-hover-bg absolute inset-0 rounded-full will-change-transform"
+                  style={{
+                    backgroundColor: "#ffffff",
+                    transform: "scaleX(0.2) translateY(200%)",
+                    transformOrigin: "center bottom",
+                  }}
+                />
+
+                {/* Old Text - on blue background, rolls up */}
+                <div
+                  ref={oldTextRef}
+                  className="relative z-10 flex items-center justify-center overflow-hidden"
+                  style={{
+                    height: "20px",
+                    width: "100%",
+                    position: "absolute",
+                    inset: 0,
+                    margin: "auto",
+                  }}
                 >
-                  <div className="flex flex-col gap-[5px]">
-                    <span className="block w-[18px] h-[1.5px] bg-white rounded-full" />
-                    <span className="block w-[14px] h-[1.5px] bg-white rounded-full" />
-                    <span className="block w-[18px] h-[1.5px] bg-white rounded-full" />
+                  <div
+                    className="flex items-center justify-center"
+                    style={{ position: "relative" }}
+                  >
+                    {textChars.map((char, index) => (
+                      <span
+                        key={`old-${index}`}
+                        className="char-item inline-block"
+                        style={{
+                          opacity: 1,
+                          transform: "translateY(0%)",
+                          whiteSpace: char === " " ? "pre" : "normal",
+                          color: "#ffffff",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          display: "inline-block",
+                        }}
+                      >
+                        {char}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
-                {/* "Menu" Text - Fades in on hover */}
-                <span
-                  className={`text-white text-sm font-medium transition-all duration-300 whitespace-nowrap ${
-                    isHoveringMenu
-                      ? "opacity-100 scale-100"
-                      : "opacity-0 scale-90"
-                  }`}
+                {/* New Text - on white background, rolls in */}
+                <div
+                  ref={newTextRef}
+                  className="relative z-10 flex items-center justify-center overflow-hidden"
                   style={{
-                    fontFamily: "var(--font-geist-sans)",
-                    letterSpacing: "0.05em",
+                    height: "20px",
+                    width: "100%",
+                    position: "absolute",
+                    inset: 0,
+                    margin: "auto",
                   }}
                 >
-                  menu
-                </span>
-              </div>
-            </button>
+                  <div
+                    className="flex items-center justify-center"
+                    style={{ position: "relative" }}
+                  >
+                    {newTextChars.map((char, index) => (
+                      <span
+                        key={`new-${index}`}
+                        className="char-item inline-block"
+                        style={{
+                          opacity: 0,
+                          transform: "translateY(100%)",
+                          whiteSpace: char === " " ? "pre" : "normal",
+                          color: "#0000CC",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          display: "inline-block",
+                        }}
+                      >
+                        {char}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       </header>
-
-      {/* Modern Sidebar Sheet */}
-      <div
-        className={`fixed inset-0 z-50 transition-all duration-500 ease-out ${
-          isSidebarOpen ? "visible" : "invisible"
-        }`}
-      >
-        {/* Backdrop */}
-        <div
-          className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-500 ${
-            isSidebarOpen ? "opacity-100" : "opacity-0"
-          }`}
-          onClick={() => setIsSidebarOpen(false)}
-        />
-
-        {/* Sidebar Panel */}
-        <div
-          className={`absolute right-0 top-0 h-full w-full max-w-md bg-gradient-to-br from-[#0B3B5F] to-[#1B5A8C] shadow-2xl transition-transform duration-500 ease-out ${
-            isSidebarOpen ? "translate-x-0" : "translate-x-full"
-          }`}
-        >
-          {/* Sidebar Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="relative w-10 h-10 rounded-full overflow-hidden bg-white/10">
-                <Image
-                  src={logoSrc}
-                  alt={logoAlt}
-                  fill
-                  className="object-contain p-1.5"
-                />
-              </div>
-              <div>
-                <h3
-                  className="text-white font-semibold text-sm"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  BCC Queue System
-                </h3>
-                <p
-                  className="text-white/40 text-xs"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  Version 1.0
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsSidebarOpen(false)}
-              className="text-white/70 hover:text-white transition-colors p-2"
-              aria-label="Close menu"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-
-          {/* Sidebar Navigation */}
-          <div className="flex-1 py-8 px-6">
-            <nav className="flex flex-col gap-2">
-              {navItems.map((item, index) => (
-                <Link
-                  key={index}
-                  href={item.href}
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="flex items-center gap-4 px-4 py-3 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition-all duration-200 group"
-                >
-                  <span className="text-white/60 group-hover:text-white/90 transition-colors">
-                    {item.icon}
-                  </span>
-                  <span
-                    className="text-sm font-medium"
-                    style={{ fontFamily: "var(--font-geist-sans)" }}
-                  >
-                    {item.label}
-                  </span>
-                </Link>
-              ))}
-            </nav>
-          </div>
-
-          {/* Sidebar Footer */}
-          <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white/10">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                <svg
-                  className="w-4 h-4 text-white/60"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <div>
-                <p
-                  className="text-white/40 text-xs"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  Need help?
-                </p>
-                <p
-                  className="text-white/80 text-xs font-medium"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  bcc@queue.edu.ph
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }

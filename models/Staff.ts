@@ -3,6 +3,20 @@ import mongoose, { Document, Model } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 
+export interface ICounterBreak {
+  start: string; // "HH:mm"
+  end: string; // "HH:mm"
+  label: string;
+}
+
+export interface ICounterSettings {
+  isOpen: boolean;
+  openTime: string; // "HH:mm"
+  closeTime: string; // "HH:mm"
+  breaks: ICounterBreak[];
+  dailyLimit: number;
+}
+
 export interface IStaff extends Document {
   staffId: string;
   facultyId: string;
@@ -15,6 +29,7 @@ export interface IStaff extends Document {
   cashierWindow: string;
   status: "active" | "inactive" | "suspended";
   mustChangePassword: boolean;
+  counterSettings?: ICounterSettings;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -81,6 +96,25 @@ const staffSchema = new mongoose.Schema<IStaff>(
     mustChangePassword: {
       type: Boolean,
       default: true,
+    },
+    // Per-counter queue controls (cashier-managed). Older docs lack this path
+    // and .lean() skips defaults — read through getEffectiveCounterSettings().
+    counterSettings: {
+      isOpen: { type: Boolean, default: true },
+      openTime: { type: String, default: "08:00" },
+      closeTime: { type: String, default: "17:00" },
+      breaks: {
+        type: [
+          {
+            _id: false,
+            start: { type: String, required: true },
+            end: { type: String, required: true },
+            label: { type: String, default: "" },
+          },
+        ],
+        default: [],
+      },
+      dailyLimit: { type: Number, default: 500, min: 1, max: 2000 },
     },
   },
   {

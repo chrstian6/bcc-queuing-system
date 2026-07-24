@@ -3,9 +3,17 @@
 
 import { signIn, signOut, auth } from "@/lib/auth";
 import connectDB from "@/lib/mongodb";
+import { headers } from "next/headers";
 import User, { UserRole } from "@/models/User";
 import Staff from "@/models/Staff";
 import { revalidatePath } from "next/cache";
+import { getStaffRoleNumber } from "@/lib/roles";
+import { checkRateLimit, getClientIp } from "@/lib/ratelimits";
+import {
+  registerStudentSchema,
+  type RegisterStudentInput,
+} from "@/types/student";
+import { getCampusForYearLevel, type YearLevel } from "@/types/ticket";
 
 interface AuthResponse {
   success: boolean;
@@ -15,21 +23,10 @@ interface AuthResponse {
   mustChangePassword?: boolean;
 }
 
-// Helper function instead of exported constant
-function getStaffRoleNumber(roleName: string): number {
-  const roleMap: Record<string, number> = {
-    registrar: 3,
-    dean: 4,
-    dsdw: 5,
-    cashier: 6,
-  };
-  return roleMap[roleName] || 6;
-}
-
 export async function loginAction(
   email: string,
   password: string,
-  role: "admin" | "staff",
+  role: "admin" | "staff" | "student",
 ): Promise<AuthResponse> {
   try {
     if (!email || !password || !role) {
@@ -52,11 +49,14 @@ export async function loginAction(
       return await staffLogin(email, password);
     }
 
-    // Admin login
+    // Admin/student login share the User model
     const result = await signIn("credentials", {
       email: email.toLowerCase().trim(),
       password,
-      role: UserRole.ADMIN.toString(),
+      role:
+        role === "student"
+          ? UserRole.STUDENT.toString()
+          : UserRole.ADMIN.toString(),
       redirect: false,
     });
 
@@ -65,7 +65,9 @@ export async function loginAction(
         "Invalid email or password":
           "Invalid email or password. Please try again.",
         "Invalid credentials for this role":
-          "Invalid admin credentials. Please check your email and password.",
+          role === "student"
+            ? "Invalid student credentials. Please check your email and password."
+            : "Invalid admin credentials. Please check your email and password.",
         "Please provide all required fields":
           "Please fill in all required fields.",
         "Invalid role specified": "Invalid role specified. Please try again.",
@@ -77,13 +79,16 @@ export async function loginAction(
       };
     }
 
+    const redirectTo =
+      role === "student" ? "/student/dashboard" : "/admin/dashboard";
+
     revalidatePath("/");
-    revalidatePath("/admin/dashboard");
+    revalidatePath(redirectTo);
 
     return {
       success: true,
       message: "Login successful",
-      redirectTo: "/admin/dashboard",
+      redirectTo,
     };
   } catch (error: any) {
     console.error("Login error:", error);
@@ -182,10 +187,9 @@ export async function logoutAction(): Promise<AuthResponse> {
     await signOut({ redirect: false });
     revalidatePath("/");
     revalidatePath("/admin/dashboard");
-    revalidatePath("/registrar/dashboard");
-    revalidatePath("/dean/dashboard");
-    revalidatePath("/dsdw/dashboard");
-    revalidatePath("/cashier/dashboard");
+    revalidatePath("/staff/cashier/dashboard");
+    revalidatePath("/staff/registrar/dashboard");
+    revalidatePath("/student/dashboard");
     return { success: true, message: "Logged out successfully" };
   } catch (error: any) {
     console.error("Logout error:", error);
@@ -193,60 +197,117 @@ export async function logoutAction(): Promise<AuthResponse> {
   }
 }
 
-export async function registerAction(
-  email: string,
-  password: string,
-  name?: string,
+export async function registerStudentAction(
+  data: RegisterStudentInput,
 ): Promise<AuthResponse> {
   try {
-    if (!email || !password) {
-      return { success: false, error: "Please provide all required fields" };
-    }
-
-    if (!email.includes("@")) {
-      return { success: false, error: "Please enter a valid email address" };
-    }
-
-    if (password.length < 6) {
+    const headersList = await headers();
+    const ip = getClientIp(headersList);
+    const rateLimit = await checkRateLimit(
+      ip,
+      "registerStudent",
+      5,
+      60 * 60 * 1000,
+    );
+    if (!rateLimit.allowed) {
       return {
         success: false,
-        error: "Password must be at least 6 characters",
+        error: "Too many registration attempts. Please try again later.",
       };
+    }
+
+    const parsed = registerStudentSchema.safeParse(data);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      return {
+        success: false,
+        error: firstIssue?.message || "Please check the form for errors.",
+      };
+    }
+
+    const input = parsed.data;
+    const email = input.email.toLowerCase().trim();
+    // Campus is derived server-side from year level, never client-supplied
+    const campus = getCampusForYearLevel(input.year as YearLevel);
+    if (!campus) {
+      return { success: false, error: "Invalid year level" };
     }
 
     await connectDB();
 
-    const existingUser = await User.findOne({
-      email: email.toLowerCase().trim(),
-    });
+    const [existingUserEmail, existingSchoolId, existingStaffEmail] =
+      await Promise.all([
+        User.findOne({ email }),
+        User.findOne({ schoolId: input.schoolId }),
+        Staff.findOne({ email }),
+      ]);
 
-    if (existingUser) {
+    if (existingUserEmail || existingStaffEmail) {
       return {
         success: false,
         error: "An account with this email already exists",
       };
     }
 
+    if (existingSchoolId) {
+      return {
+        success: false,
+        error: "An account with this School ID already exists",
+      };
+    }
+
     const user = new User({
-      email: email.toLowerCase().trim(),
-      password,
-      role: UserRole.ADMIN,
-      name: name || email.split("@")[0],
+      email,
+      password: input.password,
+      role: UserRole.STUDENT,
+      name: `${input.firstName} ${input.lastName}`,
+      schoolId: input.schoolId,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      middleName: input.middleName || "",
+      suffix: input.suffix || "",
+      year: input.year,
+      campus,
+      contactNumber: input.contactNumber || "",
     });
 
     await user.save();
 
+    // Immediate login (no email verification by design)
+    const result = await signIn("credentials", {
+      email,
+      password: input.password,
+      role: UserRole.STUDENT.toString(),
+      redirect: false,
+    });
+
+    if (result?.error) {
+      // Account exists but auto-login failed — let them log in manually
+      return {
+        success: true,
+        message: "Account created. Please log in.",
+        redirectTo: "/auth/login",
+      };
+    }
+
+    revalidatePath("/student/dashboard");
+
     return {
       success: true,
-      message: "Admin account created successfully",
+      message: "Account created successfully",
+      redirectTo: "/student/dashboard",
     };
   } catch (error: any) {
-    console.error("Registration error:", error);
+    console.error("Student registration error:", error);
 
     if (error?.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
       return {
         success: false,
-        error: "An account with this email already exists",
+        error:
+          field === "schoolId"
+            ? "An account with this School ID already exists"
+            : "An account with this email already exists",
       };
     }
 

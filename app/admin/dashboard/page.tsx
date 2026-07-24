@@ -1,13 +1,12 @@
 // app/admin/dashboard/page.tsx
 export const dynamic = "force-dynamic";
-
 import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
 import {
-  getQueueStats,
   getPendingTickets,
   getTodayTickets,
 } from "@/actions/ticket";
+import { getTodayOverviewStats } from "@/actions/analytics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, RefreshCw } from "lucide-react";
@@ -19,7 +18,7 @@ interface Student {
   firstName: string;
   lastName: string;
   year: string;
-  section: string;
+  campus?: string;
 }
 
 interface Ticket {
@@ -54,33 +53,33 @@ export default async function AdminDashboardPage() {
   if (!success || !session) redirect("/?error=unauthorized");
   if (session.user?.role !== "1") redirect("/?error=forbidden");
 
-  const [statsData, pendingData, todayData] = await Promise.all([
-    getQueueStats(),
+  const [overviewData, pendingData, todayData] = await Promise.all([
+    getTodayOverviewStats(),
     getPendingTickets(),
     getTodayTickets(),
   ]);
 
   const pendingTickets: Ticket[] =
-    pendingData.success && pendingData.tickets?.length > 0
-      ? pendingData.tickets
-      : [];
+    pendingData.success && pendingData.tickets ? pendingData.tickets : [];
 
   const todayTickets: Ticket[] =
-    todayData.success && todayData.tickets?.length > 0 ? todayData.tickets : [];
+    todayData.success && todayData.tickets ? todayData.tickets : [];
 
-  const servingTicket =
-    todayTickets.find((t) => t.status === "serving") ?? null;
+  const servingTicket = todayTickets.find((t) => t.status === "serving") ?? null;
 
   const nextInLine = pendingTickets[0] ?? null;
 
-  const waitingCount =
-    statsData.success && statsData.stats
-      ? (statsData.stats.pendingTickets ?? pendingTickets.length)
-      : pendingTickets.length;
+  const overview = overviewData.success
+    ? (overviewData as any).stats
+    : null;
 
-  const servedToday = todayTickets.filter(
-    (t) => t.status === "completed",
-  ).length;
+  const waitingCount = overview?.pending ?? pendingTickets.length;
+
+  const servedToday =
+    overview?.completed ??
+    todayTickets.filter((t) => t.status === "completed").length;
+
+  const avgWait = overview?.avgWaitFormatted ?? "—";
 
   return (
     <div className="p-6 space-y-4 font-sans">
@@ -128,8 +127,10 @@ export default async function AdminDashboardPage() {
                     {nextInLine.transactionType}
                   </Badge>
                   <span className="text-[11px] text-muted-foreground">
-                    {nextInLine.student?.year} · Section{" "}
-                    {nextInLine.student?.section}
+                    {nextInLine.student?.year}
+                    {nextInLine.student?.campus
+                      ? ` · ${nextInLine.student.campus}`
+                      : ""}
                   </span>
                 </div>
               </div>
@@ -152,7 +153,7 @@ export default async function AdminDashboardPage() {
             {[
               { label: "Waiting", value: waitingCount },
               { label: "Served today", value: servedToday },
-              { label: "Avg wait", value: "—" },
+              { label: "Avg wait", value: avgWait },
             ].map(({ label, value }) => (
               <div
                 key={label}
@@ -200,8 +201,7 @@ export default async function AdminDashboardPage() {
                       {ticket.student?.firstName} {ticket.student?.lastName}
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                      {ticket.student?.year} · Section {ticket.student?.section}{" "}
-                      · {ticket.transactionType}
+                      {ticket.student?.year} · {ticket.transactionType}
                     </p>
                   </div>
                   <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">

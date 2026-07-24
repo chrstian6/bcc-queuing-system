@@ -5,34 +5,7 @@ import connectDB from "./mongodb";
 import User, { UserRole } from "@/models/User";
 import Staff from "@/models/Staff";
 import { authConfig } from "./auth.config";
-
-const isProduction = process.env.NODE_ENV === "production";
-
-// Staff role numbers - use const assertion for type safety
-const StaffRoles = {
-  REGISTRAR: 3,
-  DEAN: 4,
-  DSDW: 5,
-  CASHIER: 6,
-} as const;
-
-// Helper function to check if a number is a valid staff role
-function isStaffRole(
-  role: number,
-): role is (typeof StaffRoles)[keyof typeof StaffRoles] {
-  return Object.values(StaffRoles).includes(role as any);
-}
-
-// Helper function to get role number from staff role name
-function getStaffRoleNumber(roleName: string): number {
-  const roleMap: Record<string, number> = {
-    registrar: StaffRoles.REGISTRAR,
-    dean: StaffRoles.DEAN,
-    dsdw: StaffRoles.DSDW,
-    cashier: StaffRoles.CASHIER,
-  };
-  return roleMap[roleName] || StaffRoles.CASHIER;
-}
+import { getStaffRoleNumber, isStaffRole } from "./roles";
 
 export const {
   auth,
@@ -142,6 +115,14 @@ export const {
               email: user.email,
               role: user.role.toString(),
               name: user.name || user.email.split("@")[0],
+              // Student profile claims (undefined for admins)
+              ...(user.role === UserRole.STUDENT && user.schoolId
+                ? {
+                    schoolId: user.schoolId,
+                    year: user.year,
+                    campus: user.campus,
+                  }
+                : {}),
             };
           } else {
             throw new Error("Invalid role specified");

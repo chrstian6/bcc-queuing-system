@@ -3,6 +3,15 @@
 
 import connectDB from "@/lib/mongodb";
 import Ticket from "@/models/Ticket";
+import Staff from "@/models/Staff";
+import Counter from "@/models/Counter";
+import { getSystemSettings } from "./system-settings";
+import {
+  evaluateCounterState,
+  summarizeAvailability,
+  type QueueAvailabilityStatus,
+} from "@/lib/counterSettings";
+import { getAppDayRange, getAppNowMinutes } from "@/lib/time";
 
 interface DepartmentStatus {
   department: string;
@@ -37,18 +46,15 @@ export async function getPublicQueueStatus(): Promise<QueueStatusResponse> {
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getAppDayRange();
 
     const departments = ["registrar", "dean", "dsdw", "cashier"];
 
     const departmentData = await Promise.all(
       departments.map(async (dept) => {
         const servingTicket = await Ticket.findOne({
-          department: dept,
-          status: "serving",
+          department: dept as any,
+          status: "serving" as any,
           createdAt: { $gte: today, $lt: tomorrow },
         })
           .sort({ servedAt: -1 })
@@ -56,8 +62,8 @@ export async function getPublicQueueStatus(): Promise<QueueStatusResponse> {
           .lean();
 
         const waitingCount = await Ticket.countDocuments({
-          department: dept,
-          status: "pending",
+          department: dept as any,
+          status: "pending" as any,
           createdAt: { $gte: today, $lt: tomorrow },
         });
 
@@ -81,6 +87,69 @@ export async function getPublicQueueStatus(): Promise<QueueStatusResponse> {
     return {
       success: false,
       error: "Failed to fetch queue status",
+    };
+  }
+}
+
+export interface QueueAvailability {
+  success: boolean;
+  status: QueueAvailabilityStatus;
+  queueOpen: boolean;
+  openCounters: number;
+  totalCounters: number;
+  message: string;
+}
+
+/**
+ * Public: can a cashier ticket be created right now? Combines the global
+ * queue toggle with every active cashier's counter state (open/close, hours,
+ * breaks, daily limit). Uses the same evaluator as ticket distribution.
+ */
+export async function getQueueAvailability(): Promise<QueueAvailability> {
+  try {
+    await connectDB();
+
+    const settingsResult = await getSystemSettings();
+    const queueOpen = settingsResult.queueOpen !== false;
+
+    const cashiers = await Staff.find({
+      roleName: "cashier",
+      status: "active",
+    }).lean();
+
+    const { dateStr } = getAppDayRange();
+    const nowMinutes = getAppNowMinutes();
+
+    const states = await Promise.all(
+      cashiers.map(async (staff) => {
+        const counter = await Counter.findOne({
+          _id: `STAFF-${staff.staffId}-${dateStr}`,
+        }).lean();
+        return evaluateCounterState(staff, counter?.seq || 0, nowMinutes).state;
+      }),
+    );
+
+    const summary = summarizeAvailability(queueOpen, states);
+
+    return {
+      success: true,
+      status: summary.status,
+      queueOpen,
+      openCounters: summary.openCounters,
+      totalCounters: cashiers.length,
+      message: summary.message,
+    };
+  } catch (error) {
+    console.error("Error checking queue availability:", error);
+    // Fail open so an outage doesn't block the kiosk; creation still
+    // re-validates server-side.
+    return {
+      success: false,
+      status: "open",
+      queueOpen: true,
+      openCounters: 0,
+      totalCounters: 0,
+      message: "",
     };
   }
 }

@@ -10,6 +10,9 @@ declare module "next-auth" {
     roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
+    schoolId?: string;
+    year?: string;
+    campus?: string;
   }
 
   interface Session {
@@ -25,6 +28,9 @@ declare module "next-auth" {
       roleName?: string; // ADD THIS
       cashierWindow?: string;
       mustChangePassword?: boolean;
+      schoolId?: string;
+      year?: string;
+      campus?: string;
     };
   }
 }
@@ -38,5 +44,8 @@ declare module "next-auth/jwt" {
     roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
+    schoolId?: string;
+    year?: string;
+    campus?: string;
   }
 }

@@ -1,55 +1,35 @@
 // lib/departmentAuth.ts
 
 /**
- * Check if a staff member can access a specific department's resources
+ * Check if a staff member can access the cashier department
  */
-export function canAccessDepartment(
-  staffRole: string,
-  department: string,
-): boolean {
-  // Staff can only access their own department
-  return staffRole === department;
+export function canAccessCashier(staffRole: string): boolean {
+  return staffRole === "cashier";
 }
 
 /**
- * Check if a staff member can serve a specific transaction type
+ * Check if a staff member can serve a specific transaction type (cashier only)
  */
-export function canServeTransaction(
-  staffRole: string,
-  transactionType: string,
-): boolean {
-  const transactionDepartmentMap: Record<string, string> = {
-    tor: "registrar",
-    coe: "registrar",
-    "request-grades": "registrar",
-    assessment: "registrar",
-    certificate: "registrar",
-    "enrollment-fees": "cashier",
-    "exam-fees": "cashier",
-    payments: "cashier",
-  };
-
-  const requiredDepartment =
-    transactionDepartmentMap[transactionType] || "general";
-  return staffRole === requiredDepartment;
+export function canServeTransaction(transactionType: string): boolean {
+  const cashierTransactions = [
+    "tuition-payment",
+    "miscellaneous-fee",
+    "document-payment",
+    "other-school-fees",
+    "assessment",
+  ];
+  return cashierTransactions.includes(transactionType);
 }
 
 /**
- * Get allowed transaction types for a staff role
+ * Get all cashier transaction types
  */
-export function getAllowedTransactions(staffRole: string): string[] {
-  const transactionDepartmentMap: Record<string, string> = {
-    tor: "registrar",
-    coe: "registrar",
-    "request-grades": "registrar",
-    assessment: "registrar",
-    certificate: "registrar",
-    "enrollment-fees": "cashier",
-    "exam-fees": "cashier",
-    payments: "cashier",
-  };
-
-  return Object.entries(transactionDepartmentMap)
-    .filter(([_, dept]) => dept === staffRole)
-    .map(([transaction]) => transaction);
+export function getCashierTransactions(): string[] {
+  return [
+    "tuition-payment",
+    "miscellaneous-fee",
+    "document-payment",
+    "other-school-fees",
+    "assessment",
+  ];
 }

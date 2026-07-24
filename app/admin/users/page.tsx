@@ -5,14 +5,19 @@ import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { UserPlus, Users, Shield, GraduationCap } from "lucide-react";
+import { getUserStats } from "@/actions/staff";
 
 export default async function UsersPage() {
   const { success, session } = await getSession();
   if (!success || !session) redirect("/?error=unauthorized");
   if (session.user?.role !== "1") redirect("/?error=forbidden");
+
+  const statsResult = await getUserStats();
+  const stats = statsResult.success
+    ? (statsResult as any).stats
+    : { totalUsers: 0, staff: 0, students: 0, studentsToday: 0 };
 
   return (
     <div
@@ -42,7 +47,7 @@ export default async function UsersPage() {
               <Users className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">{stats.totalUsers}</p>
               <p className="text-xs text-muted-foreground">Total Users</p>
             </div>
           </CardContent>
@@ -53,7 +58,7 @@ export default async function UsersPage() {
               <Shield className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">{stats.staff}</p>
               <p className="text-xs text-muted-foreground">Staff</p>
             </div>
           </CardContent>
@@ -64,7 +69,7 @@ export default async function UsersPage() {
               <GraduationCap className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">{stats.students}</p>
               <p className="text-xs text-muted-foreground">Students</p>
             </div>
           </CardContent>
@@ -75,7 +80,7 @@ export default async function UsersPage() {
               <UserPlus className="w-5 h-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">0</p>
+              <p className="text-2xl font-bold">{stats.studentsToday}</p>
               <p className="text-xs text-muted-foreground">New Today</p>
             </div>
           </CardContent>

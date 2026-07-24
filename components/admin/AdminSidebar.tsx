@@ -1,36 +1,42 @@
 // components/admin/AdminSidebar.tsx
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import * as React from "react";
+import Image from "next/image";
+import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { NavMain } from "@/components/nav-main";
+import { NavProjects } from "@/components/nav-projects";
+import { NavSecondary } from "@/components/nav-secondary";
+import { NavUser } from "@/components/nav-user";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
-  Users,
-  Clock,
-  Ticket,
-  BarChart3,
+  ListOrdered,
+  Receipt,
+  ChartColumn,
   Settings,
-  ChevronLeft,
-  ChevronRight,
-  LogOut,
-  Menu,
   Bell,
-  ListChecks,
+  CircleHelp,
+  UserPlus,
+  Play,
+  ChartNoAxesCombined,
+  Users,
+  FileText,
+  History,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
-import { useSession } from "next-auth/react";
 
-interface AdminSidebarProps {
+interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: {
     name?: string | null;
     email?: string | null;
@@ -41,188 +47,253 @@ interface AdminSidebarProps {
   };
 }
 
-// Admin menu items - Queue Management is now a single page with tabs
-const adminMenuItems = [
-  {
-    title: "Dashboard",
-    icon: LayoutDashboard,
-    href: "/admin/dashboard",
-  },
-  {
-    title: "Queue Management",
-    icon: Clock,
-    href: "/admin/queue",
-  },
-  {
-    title: "User Management",
-    icon: Users,
-    href: "/admin/users",
-    items: [
-      { title: "All Users", href: "/admin/users", icon: Users },
-      { title: "Staff Accounts", href: "/admin/users/staff", icon: Ticket },
-      {
-        title: "Create Account",
-        href: "/admin/users/create",
-        icon: ListChecks,
-      },
-    ],
-  },
-  {
-    title: "Reports",
-    icon: BarChart3,
-    href: "/admin/reports",
-  },
-  {
-    title: "Settings",
-    icon: Settings,
-    href: "/admin/settings",
-  },
-];
-
-// Helper function to generate staff menu items with dynamic routes
-function getStaffMenuItems(role: string): any[] {
-  const basePath = `/staff/${role}`;
-
-  const menus: Record<string, any[]> = {
-    registrar: [
-      {
-        title: "Dashboard",
-        icon: LayoutDashboard,
-        href: `${basePath}/dashboard`,
-      },
-      {
-        title: "Queue Management",
-        icon: Clock,
-        href: `${basePath}/queue`,
-      },
-      {
-        title: "Reports",
-        icon: BarChart3,
-        href: `${basePath}/reports`,
-      },
-      {
-        title: "Settings",
-        icon: Settings,
-        href: `${basePath}/settings`,
-      },
-    ],
-    dean: [
-      {
-        title: "Dashboard",
-        icon: LayoutDashboard,
-        href: `${basePath}/dashboard`,
-      },
-      {
-        title: "Queue Management",
-        icon: Clock,
-        href: `${basePath}/queue`,
-      },
-      {
-        title: "Reports",
-        icon: BarChart3,
-        href: `${basePath}/reports`,
-      },
-      {
-        title: "Settings",
-        icon: Settings,
-        href: `${basePath}/settings`,
-      },
-    ],
-    dsdw: [
-      {
-        title: "Dashboard",
-        icon: LayoutDashboard,
-        href: `${basePath}/dashboard`,
-      },
-      {
-        title: "Queue Management",
-        icon: Clock,
-        href: `${basePath}/queue`,
-      },
-      {
-        title: "Reports",
-        icon: BarChart3,
-        href: `${basePath}/reports`,
-      },
-      {
-        title: "Settings",
-        icon: Settings,
-        href: `${basePath}/settings`,
-      },
-    ],
-    cashier: [
-      {
-        title: "Dashboard",
-        icon: LayoutDashboard,
-        href: `${basePath}/dashboard`,
-      },
-      {
-        title: "Queue Management",
-        icon: Clock,
-        href: `${basePath}/queue`,
-      },
-      {
-        title: "Reports",
-        icon: BarChart3,
-        href: `${basePath}/reports`,
-      },
-      {
-        title: "Settings",
-        icon: Settings,
-        href: `${basePath}/settings`,
-      },
-    ],
-  };
-
-  return (
-    menus[role] || [
-      {
-        title: "Dashboard",
-        icon: LayoutDashboard,
-        href: `${basePath}/dashboard`,
-      },
-      {
-        title: "Queue Management",
-        icon: Clock,
-        href: `${basePath}/queue`,
-      },
-      {
-        title: "Settings",
-        icon: Settings,
-        href: `${basePath}/settings`,
-      },
-    ]
-  );
-}
-
-export function AdminSidebar({ user }: AdminSidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { update } = useSession();
 
-  // Determine if user is admin or staff
-  const isAdmin = user?.role === "1";
-  const staffRole = user?.staffRole || "";
+  // Chrome variant per portal: admin (role 1), student (role 2),
+  // registrar (role 3), cashier (role 6, default)
+  const variant =
+    user?.role === "1"
+      ? "admin"
+      : user?.role === "2"
+        ? "student"
+        : user?.role === "3" || user?.staffRole === "registrar"
+          ? "registrar"
+          : "cashier";
 
-  // Get menu items based on role
-  let menuItems: any[];
-  let roleDisplayName: string;
+  const roleDisplayName =
+    variant === "admin"
+      ? "Admin"
+      : variant === "student"
+        ? "Student"
+        : variant === "registrar"
+          ? "Registrar"
+          : "Cashier";
 
-  if (isAdmin) {
-    menuItems = adminMenuItems;
-    roleDisplayName = "Admin";
-  } else {
-    menuItems = getStaffMenuItems(staffRole);
-    const roleNames: Record<string, string> = {
-      registrar: "Registrar",
-      dean: "Dean",
-      dsdw: "DSDW",
-      cashier: "Cashier",
-    };
-    roleDisplayName = roleNames[staffRole] || "Staff";
-  }
+  const homeUrl =
+    variant === "admin"
+      ? "/admin/dashboard"
+      : variant === "student"
+        ? "/student/dashboard"
+        : variant === "registrar"
+          ? "/staff/registrar/dashboard"
+          : "/staff/cashier/dashboard";
+
+  const adminNavMain = [
+    {
+      title: "Dashboard",
+      url: "/admin/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/admin/dashboard",
+    },
+    {
+      title: "Queue",
+      url: "/admin/queue",
+      icon: ListOrdered,
+      isActive: pathname.startsWith("/admin/queue"),
+    },
+    {
+      title: "Users",
+      url: "/admin/users",
+      icon: Users,
+      isActive: pathname.startsWith("/admin/users"),
+      items: [
+        { title: "All Users", url: "/admin/users" },
+        { title: "Staff Accounts", url: "/admin/users/staff" },
+        { title: "Create Account", url: "/admin/users/create" },
+      ],
+    },
+    {
+      title: "History",
+      url: "/admin/history",
+      icon: History,
+      isActive: pathname.startsWith("/admin/history"),
+    },
+    {
+      title: "Reports",
+      url: "/admin/reports",
+      icon: ChartNoAxesCombined,
+      isActive: pathname.startsWith("/admin/reports"),
+    },
+    {
+      title: "Settings",
+      url: "/admin/settings",
+      icon: Settings,
+      isActive: pathname.startsWith("/admin/settings"),
+    },
+  ];
+
+  const cashierNavMain = [
+    {
+      title: "Dashboard",
+      url: "/staff/cashier/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/staff/cashier/dashboard",
+    },
+    {
+      title: "Queue",
+      url: "/staff/cashier/queue",
+      icon: ListOrdered,
+      isActive: pathname.startsWith("/staff/cashier/queue"),
+      items: [
+        { title: "Current Queue", url: "/staff/cashier/queue" },
+        { title: "Served Today", url: "/staff/cashier/queue?filter=served" },
+        { title: "All Tickets", url: "/staff/cashier/queue?filter=all" },
+      ],
+    },
+    {
+      title: "Transactions",
+      url: "/staff/cashier/transactions",
+      icon: Receipt,
+      isActive: pathname.startsWith("/staff/cashier/transactions"),
+      items: [
+        {
+          title: "Tuition Payments",
+          url: "/staff/cashier/transactions?type=tuition-payment",
+        },
+        {
+          title: "Miscellaneous Fees",
+          url: "/staff/cashier/transactions?type=miscellaneous-fee",
+        },
+        {
+          title: "Document Payments",
+          url: "/staff/cashier/transactions?type=document-payment",
+        },
+        {
+          title: "Other School Fees",
+          url: "/staff/cashier/transactions?type=other-school-fees",
+        },
+        {
+          title: "Assessments",
+          url: "/staff/cashier/transactions?type=assessment",
+        },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "/staff/cashier/reports",
+      icon: ChartColumn,
+      isActive: pathname.startsWith("/staff/cashier/reports"),
+    },
+    {
+      title: "Settings",
+      url: "/staff/cashier/settings",
+      icon: Settings,
+      isActive: pathname.startsWith("/staff/cashier/settings"),
+    },
+  ];
+
+  const registrarNavMain = [
+    {
+      title: "Dashboard",
+      url: "/staff/registrar/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/staff/registrar/dashboard",
+    },
+    {
+      title: "Document Requests",
+      url: "/staff/registrar/requests",
+      icon: FileText,
+      isActive: pathname.startsWith("/staff/registrar/requests"),
+      items: [
+        { title: "Pending", url: "/staff/registrar/requests?status=pending" },
+        {
+          title: "Processing",
+          url: "/staff/registrar/requests?status=processing",
+        },
+        {
+          title: "Ready for Pickup",
+          url: "/staff/registrar/requests?status=ready-for-pickup",
+        },
+        { title: "All Requests", url: "/staff/registrar/requests" },
+      ],
+    },
+  ];
+
+  const studentNavMain = [
+    {
+      title: "Dashboard",
+      url: "/student/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/student/dashboard",
+    },
+    {
+      title: "My Tickets",
+      url: "/student/tickets",
+      icon: ListOrdered,
+      isActive: pathname.startsWith("/student/tickets"),
+    },
+    {
+      title: "Documents",
+      url: "/student/documents",
+      icon: FileText,
+      isActive: pathname.startsWith("/student/documents"),
+    },
+  ];
+
+  const secondaryBase =
+    variant === "admin"
+      ? "/admin"
+      : variant === "student"
+        ? "/student"
+        : `/staff/${variant}`;
+
+  const navSecondary = [
+    {
+      title: "Notifications",
+      url: `${secondaryBase}/notifications`,
+      icon: Bell,
+    },
+    {
+      title: "Help & Support",
+      url: `${secondaryBase}/support`,
+      icon: CircleHelp,
+    },
+  ];
+
+  const projectsByVariant = {
+    admin: [
+      { name: "Create Account", url: "/admin/users/create", icon: UserPlus },
+      { name: "View Queue", url: "/admin/queue", icon: Play },
+      { name: "Reports", url: "/admin/reports", icon: ChartNoAxesCombined },
+    ],
+    cashier: [
+      { name: "Serve Next", url: "/staff/cashier/queue", icon: Play },
+      {
+        name: "Today's Report",
+        url: "/staff/cashier/reports",
+        icon: ChartColumn,
+      },
+      {
+        name: "All Transactions",
+        url: "/staff/cashier/transactions",
+        icon: Receipt,
+      },
+    ],
+    registrar: [
+      {
+        name: "Pending Requests",
+        url: "/staff/registrar/requests?status=pending",
+        icon: Play,
+      },
+    ],
+    student: [
+      { name: "New Document Request", url: "/student/documents", icon: FileText },
+      { name: "Live Queue", url: "/live-queue", icon: Play },
+    ],
+  } as const;
+
+  const projects = [...projectsByVariant[variant]];
+
+  const navMain =
+    variant === "admin"
+      ? adminNavMain
+      : variant === "student"
+        ? studentNavMain
+        : variant === "registrar"
+          ? registrarNavMain
+          : cashierNavMain;
 
   const handleLogout = async () => {
     const result = await logoutAction();
@@ -232,287 +303,69 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     }
   };
 
+  const userData = {
+    name: user?.name || roleDisplayName,
+    email: user?.email || "",
+    avatar: "",
+    role: roleDisplayName,
+    onLogout: handleLogout,
+  };
+
   return (
-    <>
-      {/* Mobile Menu Button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="fixed top-4 left-4 z-50 lg:hidden"
-        onClick={() => setMobileOpen(!mobileOpen)}
-      >
-        <Menu className="h-5 w-5" />
-      </Button>
-
-      {/* Sidebar Overlay for Mobile */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed lg:static inset-y-0 left-0 z-50 flex flex-col bg-[#1B5A8C] text-white transition-all duration-300",
-          collapsed ? "w-[70px]" : "w-[260px]",
-          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-        )}
-        style={{ fontFamily: "var(--font-geist-sans)" }}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
-          <Avatar className="h-8 w-8 bg-white/20">
-            <AvatarFallback
-              className="text-white font-bold text-sm"
-              style={{ fontFamily: "var(--font-geist-sans)" }}
-            >
-              BCC
-            </AvatarFallback>
-          </Avatar>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <h1
-                className="text-sm font-bold truncate"
-                style={{ fontFamily: "var(--font-geist-sans)" }}
-              >
-                BCC {roleDisplayName}
-              </h1>
-              <p
-                className="text-xs text-white/60 truncate"
-                style={{ fontFamily: "var(--font-geist-sans)" }}
-              >
-                Queue System
-              </p>
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden lg:flex text-white/70 hover:text-white hover:bg-white/10"
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
-        {/* Navigation */}
-        <ScrollArea className="flex-1 px-3 py-4">
-          <nav className="space-y-1">
-            {menuItems.map((item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(item.href + "/");
-
-              if (item.items) {
-                return (
-                  <CollapsibleMenuItem
-                    key={item.title}
-                    item={item}
-                    collapsed={collapsed}
-                    pathname={pathname}
+    <Sidebar
+      collapsible="icon"
+      className="[&_[data-sidebar=sidebar]]:bg-[#EFEFEF]"
+      {...props}
+      style={
+        {
+          "--sidebar-width": "16rem",
+          "--sidebar-width-icon": "3.5rem",
+        } as React.CSSProperties
+      }
+    >
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <a href={homeUrl}>
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden bg-white">
+                  <Image
+                    src="/images/bcc-logo-3.png"
+                    alt="BCC Logo"
+                    width={32}
+                    height={32}
+                    className="object-contain"
+                    priority
                   />
-                );
-              }
-
-              return (
-                <Tooltip key={item.title} delayDuration={0}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-                        isActive
-                          ? "bg-white/20 text-white"
-                          : "text-white/70 hover:text-white hover:bg-white/10",
-                        collapsed && "justify-center px-2",
-                      )}
-                      style={{ fontFamily: "var(--font-geist-sans)" }}
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      <item.icon className="h-5 w-5 flex-shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </Link>
-                  </TooltipTrigger>
-                  {collapsed && (
-                    <TooltipContent side="right">
-                      <span style={{ fontFamily: "var(--font-geist-sans)" }}>
-                        {item.title}
-                      </span>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              );
-            })}
-          </nav>
-        </ScrollArea>
-
-        {/* User Section */}
-        <div className="border-t border-white/10 p-3">
-          {collapsed ? (
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="w-full text-white/70 hover:text-white hover:bg-white/10"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <span style={{ fontFamily: "var(--font-geist-sans)" }}>
-                  Logout
-                </span>
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 px-2">
-                <Avatar className="h-8 w-8 bg-white/20">
-                  <AvatarFallback
-                    className="text-white text-xs"
-                    style={{ fontFamily: "var(--font-geist-sans)" }}
-                  >
-                    {user?.name?.charAt(0) || (isAdmin ? "A" : "S")}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="text-sm font-medium truncate"
-                    style={{ fontFamily: "var(--font-geist-sans)" }}
-                  >
-                    {user?.name || (isAdmin ? "Admin" : "Staff")}
-                  </p>
-                  <p
-                    className="text-xs text-white/60 truncate"
-                    style={{ fontFamily: "var(--font-geist-sans)" }}
-                  >
-                    {isAdmin ? user?.email : roleDisplayName}
-                  </p>
-                  {!isAdmin && user?.facultyId && (
-                    <p
-                      className="text-xs text-white/40 truncate"
-                      style={{ fontFamily: "var(--font-geist-sans)" }}
-                    >
-                      ID: {user.facultyId}
-                    </p>
-                  )}
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="flex-1 text-white/70 hover:text-white hover:bg-white/10"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  <Bell className="h-4 w-4 mr-1" />
-                  Alerts
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-white/70 hover:text-white hover:bg-white/10"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </aside>
-    </>
-  );
-}
-
-// Collapsible Menu Item Component
-function CollapsibleMenuItem({
-  item,
-  collapsed,
-  pathname,
-}: {
-  item: any;
-  collapsed: boolean;
-  pathname: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const isActive = item.items?.some(
-    (sub: any) => pathname === sub.href || pathname.startsWith(sub.href + "/"),
-  );
-
-  if (collapsed) {
-    return (
-      <Tooltip delayDuration={0}>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => setOpen(!open)}
-            className={cn(
-              "w-full flex items-center justify-center px-2 py-2 rounded-lg text-sm transition-colors",
-              isActive
-                ? "bg-white/20 text-white"
-                : "text-white/70 hover:text-white hover:bg-white/10",
-            )}
-          >
-            <item.icon className="h-5 w-5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <span style={{ fontFamily: "var(--font-geist-sans)" }}>
-            {item.title}
-          </span>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-          isActive
-            ? "bg-white/20 text-white"
-            : "text-white/70 hover:text-white hover:bg-white/10",
-        )}
-        style={{ fontFamily: "var(--font-geist-sans)" }}
-      >
-        <item.icon className="h-5 w-5 flex-shrink-0" />
-        <span className="flex-1 text-left">{item.title}</span>
-        <ChevronRight
-          className={cn("h-4 w-4 transition-transform", open && "rotate-90")}
-        />
-      </button>
-      {open && (
-        <div className="ml-4 mt-1 space-y-1 border-l border-white/10 pl-4">
-          {item.items.map((sub: any) => {
-            const isSubActive = pathname === sub.href;
-            return (
-              <Link
-                key={sub.title}
-                href={sub.href}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors",
-                  isSubActive
-                    ? "bg-white/20 text-white"
-                    : "text-white/60 hover:text-white hover:bg-white/10",
-                )}
-                style={{ fontFamily: "var(--font-geist-sans)" }}
-              >
-                <sub.icon className="h-3.5 w-3.5" />
-                {sub.title}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
+                <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+                  <span
+                    className="truncate text-sm font-semibold"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
+                    BCC {roleDisplayName}
+                  </span>
+                  <span
+                    className="truncate text-[11px] text-muted-foreground font-medium"
+                    style={{ fontFamily: "var(--font-geist-sans)" }}
+                  >
+                    Queue System
+                  </span>
+                </div>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent className="overflow-auto">
+        <NavMain items={navMain} />
+        <NavProjects projects={projects} />
+        <NavSecondary items={navSecondary} className="mt-auto pt-2 border-t" />
+      </SidebarContent>
+      <SidebarFooter>
+        <NavUser user={userData} />
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
 }

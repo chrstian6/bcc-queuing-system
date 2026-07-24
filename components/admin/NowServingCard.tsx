@@ -1,15 +1,14 @@
-// components/admin/NowServingCard.tsx
 "use client";
 
 import { useState, useTransition } from "react";
 import { completeTicket, serveNextTicket } from "@/actions/ticket";
-import { CheckCheck, ArrowRight, Loader2, User } from "lucide-react";
+import { CheckCheck, ArrowRight, Loader2 } from "lucide-react";
 
 interface Student {
   firstName: string;
   lastName: string;
   year: string;
-  section: string;
+  campus?: string;
 }
 
 interface Ticket {
@@ -22,7 +21,7 @@ interface Ticket {
 }
 
 interface NowServingCardProps {
-  ticket: Ticket | null; // Allow null
+  ticket: Ticket | null;
   hasNext: boolean;
 }
 
@@ -50,46 +49,6 @@ export function NowServingCard({ ticket, hasNext }: NowServingCardProps) {
 
   const isBusy = isPendingComplete || isPendingNext;
 
-  // Empty state when no ticket is being served
-  if (!ticket) {
-    return (
-      <div
-        className="rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[300px]"
-        style={{ background: "#0F172A" }}
-      >
-        <div
-          className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-          style={{ background: "rgba(255,255,255,0.08)" }}
-        >
-          <User className="w-8 h-8 text-white/40" />
-        </div>
-        <p className="text-sm font-semibold text-white/80 mb-1">
-          No Active Ticket
-        </p>
-        <p className="text-xs text-white/40 mb-6">
-          {hasNext ? "Waiting for next ticket" : "Queue is empty"}
-        </p>
-
-        {/* Show Next button even when no serving ticket */}
-        <button
-          onClick={handleNext}
-          disabled={isBusy || !hasNext}
-          className="flex items-center justify-center gap-2 rounded-lg px-6 py-2.5 text-[13px] font-medium transition-opacity disabled:opacity-40 w-full max-w-[200px]"
-          style={{ background: "rgba(255,255,255,0.92)", color: "#0F172A" }}
-        >
-          {isPendingNext ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <ArrowRight className="w-4 h-4" />
-          )}
-          Call Next
-        </button>
-
-        {error && <p className="text-[11px] text-red-400 mt-3">{error}</p>}
-      </div>
-    );
-  }
-
   return (
     <div
       className="rounded-xl p-6 flex flex-col"
@@ -111,28 +70,36 @@ export function NowServingCard({ ticket, hasNext }: NowServingCardProps) {
 
       {/* Ticket number */}
       <p className="text-7xl font-bold tracking-tight text-white leading-none mb-4">
-        {ticket.ticketNumber}
+        {ticket ? `#${ticket.ticketNumber}` : "—"}
       </p>
 
       {/* Student info */}
-      <p className="text-[15px] font-medium text-white/75 mb-2">
-        {ticket.student?.firstName} {ticket.student?.lastName}
-      </p>
-      <span
-        className="inline-block rounded-md px-2.5 py-0.5 text-xs text-white/60 w-fit mb-6"
-        style={{
-          background: "rgba(255,255,255,0.1)",
-          border: "0.5px solid rgba(255,255,255,0.15)",
-        }}
-      >
-        {ticket.transactionType}
-      </span>
+      {ticket ? (
+        <>
+          <p className="text-[15px] font-medium text-white/75 mb-2">
+            {ticket.student?.firstName} {ticket.student?.lastName}
+          </p>
+          <span
+            className="inline-block rounded-md px-2.5 py-0.5 text-xs text-white/60 w-fit mb-6"
+            style={{
+              background: "rgba(255,255,255,0.1)",
+              border: "0.5px solid rgba(255,255,255,0.15)",
+            }}
+          >
+            {ticket.transactionType}
+          </span>
+        </>
+      ) : (
+        <p className="text-[15px] font-medium text-white/50 mb-6">
+          No ticket currently serving
+        </p>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 mt-auto">
         <button
           onClick={handleComplete}
-          disabled={isBusy}
+          disabled={isBusy || !ticket}
           className="flex-1 flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-opacity disabled:opacity-50"
           style={{
             background: "rgba(255,255,255,0.1)",

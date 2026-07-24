@@ -6,6 +6,9 @@ import Staff from "@/models/Staff";
 import User from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { sendWelcomeEmail } from "@/lib/email";
+import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
+import { ROLES } from "@/lib/roles";
+import { getAppDayRange } from "@/lib/time";
 
 interface CreateStaffData {
   facultyId: string;
@@ -36,8 +39,7 @@ interface StaffResponse {
 
 /**
  * Generate a simple, easy-to-read temporary password
- * Format: word + number (e.g., "blue147", "happy523", "fox894")
- * Minimum length: word (3+ chars) + number (3 digits) = 6+ characters
+ * Format: word + number (e.g., "blue47", "happy23")
  */
 function generateSimplePassword(): string {
   const words = [
@@ -84,23 +86,17 @@ function generateSimplePassword(): string {
   ];
 
   const word = words[Math.floor(Math.random() * words.length)];
-  const number = Math.floor(Math.random() * 900) + 100; // 100-999 (3 digits)
-  const password = `${word}${number}`;
-
-  console.log(
-    "🔑 Generated password:",
-    password,
-    "(length:",
-    password.length + ")",
-  );
-  return password;
+  const number = Math.floor(Math.random() * 90) + 10; // 10-99
+  return `${word}${number}`;
 }
 
 export async function createStaffAccount(
   data: CreateStaffData,
 ): Promise<StaffResponse> {
   try {
-    // ── Validation ──────────────────────────────────────
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     if (
       !data.facultyId ||
       !data.firstName ||
@@ -119,11 +115,9 @@ export async function createStaffAccount(
       return { success: false, error: "Window number is required for cashier" };
     }
 
-    // ── Database Connection ─────────────────────────────
     await connectDB();
-    console.log("✅ Connected to database");
 
-    // ── Check for existing accounts ─────────────────────
+    // Check if email already exists in Staff collection
     const existingStaffEmail = await Staff.findOne({
       email: data.email.toLowerCase(),
     });
@@ -134,6 +128,7 @@ export async function createStaffAccount(
       };
     }
 
+    // Check if email already exists in User (Admin) collection
     const existingUserEmail = await User.findOne({
       email: data.email.toLowerCase(),
     });
@@ -144,6 +139,7 @@ export async function createStaffAccount(
       };
     }
 
+    // Check if faculty ID already exists in Staff collection
     const existingStaffFacultyId = await Staff.findOne({
       facultyId: data.facultyId,
     });
@@ -154,12 +150,8 @@ export async function createStaffAccount(
       };
     }
 
-    console.log("✅ No duplicate accounts found");
-
-    // ── Generate password ───────────────────────────────
     const tempPassword = generateSimplePassword();
 
-    // ── Create staff account ────────────────────────────
     const staffData: any = {
       facultyId: data.facultyId,
       firstName: data.firstName,
@@ -176,62 +168,24 @@ export async function createStaffAccount(
       staffData.cashierWindow = data.cashierWindow;
     }
 
-    console.log("💾 Saving staff account to database...");
     const staff = new Staff(staffData);
     await staff.save();
-    console.log("✅ Staff account saved with ID:", staff.staffId);
 
-    // ── Send welcome email ──────────────────────────────
-    console.log("📧 Attempting to send welcome email to:", staff.email);
-
-    let emailSent = false;
     try {
-      emailSent = await sendWelcomeEmail({
+      await sendWelcomeEmail({
         email: staff.email,
         firstName: staff.firstName,
         roleName: staff.roleName,
         tempPassword,
         staffId: staff.staffId,
       });
-
-      if (emailSent) {
-        console.log("✅ Welcome email sent successfully to:", staff.email);
-      } else {
-        console.error("❌ sendWelcomeEmail returned false for:", staff.email);
-      }
-    } catch (emailError: any) {
-      console.error("❌ Failed to send welcome email:");
-      console.error("  Error name:", emailError.name);
-      console.error("  Error message:", emailError.message);
-      console.error("  Error code:", emailError.code);
-      console.error("  Error command:", emailError.command);
-
-      if (emailError.stack) {
-        console.error(
-          "  Stack trace:",
-          emailError.stack.split("\n").slice(0, 3).join("\n"),
-        );
-      }
-
-      // Check for common SMTP errors
-      if (emailError.code === "EAUTH") {
-        console.error(
-          "  → Authentication failed. Check SMTP_USER and SMTP_PASS in .env.local",
-        );
-      } else if (emailError.code === "ESOCKET") {
-        console.error(
-          "  → Connection failed. Check SMTP_HOST and SMTP_PORT in .env.local",
-        );
-      } else if (emailError.code === "EENVELOPE") {
-        console.error("  → Invalid email address or sender configuration");
-      }
+    } catch (emailError) {
+      console.error("Failed to send welcome email:", emailError);
     }
 
-    // ── Revalidate paths ────────────────────────────────
     revalidatePath("/admin/users");
     revalidatePath("/admin/users/staff");
 
-    // ── Prepare response ────────────────────────────────
     const responseStaff: any = {
       staffId: staff.staffId,
       facultyId: staff.facultyId,
@@ -248,17 +202,9 @@ export async function createStaffAccount(
       responseStaff.cashierWindow = staff.cashierWindow;
     }
 
-    return {
-      success: true,
-      staff: responseStaff,
-      // Only show email warning if it failed
-      error: emailSent
-        ? undefined
-        : "Account created but welcome email could not be sent. Please check email configuration.",
-    };
+    return { success: true, staff: responseStaff };
   } catch (error: any) {
-    console.error("❌ Error creating staff account:", error);
-    console.error("  Error type:", error.constructor.name);
+    console.error("Error creating staff account:", error);
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
@@ -284,12 +230,16 @@ export async function createStaffAccount(
   }
 }
 
-// ────────────────────────────────────────────────────────
-// Other functions remain the same
-// ────────────────────────────────────────────────────────
-
 export async function getAllStaff() {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find().sort({ createdAt: -1 }).lean();
     return { success: true, staff: JSON.parse(JSON.stringify(staff)) };
@@ -301,6 +251,13 @@ export async function getAllStaff() {
 
 export async function getStaffById(staffId: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOne({ staffId } as any).lean();
     if (!staff) return { success: false, error: "Staff not found" };
@@ -313,6 +270,14 @@ export async function getStaffById(staffId: string) {
 
 export async function getStaffByRole(roleName: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find({ roleName } as any)
       .sort({ createdAt: -1 })
@@ -326,6 +291,14 @@ export async function getStaffByRole(roleName: string) {
 
 export async function getStaffByStatus(status: string) {
   try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.CASHIER,
+    );
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
     await connectDB();
     const staff = await Staff.find({ status } as any)
       .sort({ createdAt: -1 })
@@ -342,6 +315,9 @@ export async function updateStaffStatus(
   status: "active" | "inactive" | "suspended",
 ) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOneAndUpdate(
       { staffId } as any,
@@ -364,6 +340,9 @@ export async function updateStaffRole(
   roleAccessLevel?: number,
 ) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const updateData: any = { roleName };
     if (roleAccessLevel) updateData.roleAccessLevel = roleAccessLevel;
@@ -382,6 +361,9 @@ export async function updateStaffRole(
 
 export async function deleteStaff(staffId: string) {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
     const staff = await Staff.findOneAndDelete({ staffId } as any);
     if (!staff) return { success: false, error: "Staff not found" };
@@ -396,6 +378,9 @@ export async function deleteStaff(staffId: string) {
 
 export async function getStaffStats() {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
 
     const [
@@ -436,5 +421,41 @@ export async function getStaffStats() {
   } catch (error) {
     console.error("Error fetching staff stats:", error);
     return { success: false, error: "Failed to fetch staff statistics" };
+  }
+}
+
+export async function getUserStats() {
+  try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
+    await connectDB();
+    const { start: today, end: tomorrow } = getAppDayRange();
+
+    const [totalUsers, students, admins, staffCount, studentsToday] =
+      await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ role: 2 } as any),
+        User.countDocuments({ role: 1 } as any),
+        Staff.countDocuments(),
+        User.countDocuments({
+          role: 2,
+          createdAt: { $gte: today, $lt: tomorrow },
+        } as any),
+      ]);
+
+    return {
+      success: true,
+      stats: {
+        totalUsers: totalUsers + staffCount,
+        students,
+        admins,
+        staff: staffCount,
+        studentsToday,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching user stats:", error);
+    return { success: false, error: "Failed to fetch user statistics" };
   }
 }

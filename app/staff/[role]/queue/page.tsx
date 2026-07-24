@@ -1,12 +1,12 @@
 // app/staff/[role]/queue/page.tsx
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Ticket, ListChecks, AlertCircle, Loader2 } from "lucide-react";
+import { useEffect } from "react";
+import { Ticket, ListChecks } from "lucide-react";
 import { ServeTicketView } from "@/components/registrar/ServeTicketView";
 import { AllTicketsView } from "@/components/registrar/AllTicketsView";
-import { getSession } from "@/actions/auth";
 
 type QueueView = "serve" | "all";
 
@@ -17,70 +17,20 @@ function QueueContent() {
   const router = useRouter();
   const role = params.role as string;
   const [currentView, setCurrentView] = useState<QueueView>("serve");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
+  // The ticket queue is cashier-only; registrar uses /requests instead
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const sessionResult = await getSession();
-
-        if (!sessionResult.success || !sessionResult.session) {
-          router.push("/?error=unauthorized");
-          return;
-        }
-
-        const sessionUser = sessionResult.session.user as any;
-
-        // Check if the URL role matches the user's actual role
-        if (sessionUser?.roleName) {
-          // If URL role doesn't match session role, redirect to correct URL
-          if (sessionUser.roleName !== role) {
-            router.replace(`/staff/${sessionUser.roleName}/queue`);
-            return;
-          }
-        }
-      } catch (err) {
-        console.error("Error checking session:", err);
-        setError("Failed to load session");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkSession();
+    if (role !== "cashier") {
+      router.replace(`/staff/${role}/dashboard`);
+    }
   }, [role, router]);
+
+  if (role !== "cashier") return null;
 
   const tabs = [
     { id: "serve" as const, label: "Serve", icon: Ticket },
     { id: "all" as const, label: "History", icon: ListChecks },
   ];
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
-          <p className="text-sm text-gray-500" style={FONT}>
-            Loading queue...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
-        <AlertCircle className="w-12 h-12 text-red-400" />
-        <p className="text-sm text-gray-500 text-center" style={FONT}>
-          {error}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -104,10 +54,8 @@ function QueueContent() {
       </div>
 
       {/* Dynamic View */}
-      {currentView === "serve" && (
-        <ServeTicketView department={role} key={role} />
-      )}
-      {currentView === "all" && <AllTicketsView department={role} key={role} />}
+      {currentView === "serve" && <ServeTicketView department={role} />}
+      {currentView === "all" && <AllTicketsView department={role} />}
     </div>
   );
 }
@@ -115,12 +63,15 @@ function QueueContent() {
 function QueueSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
+      {/* Tabs Skeleton */}
       <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5 h-10">
         <div className="flex-1 bg-white rounded-md shadow-sm" />
         <div className="flex-1" />
       </div>
 
+      {/* Serve View Skeleton */}
       <div>
+        {/* Top Bar */}
         <div className="flex items-center justify-between pb-3 mb-1">
           <div className="flex items-center gap-3">
             <div className="h-5 w-20 bg-gray-100 rounded-full" />
@@ -129,7 +80,9 @@ function QueueSkeleton() {
           <div className="h-5 w-14 bg-gray-100 rounded-full" />
         </div>
 
+        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-5 lg:divide-x divide-gray-100">
+          {/* Now Serving */}
           <div className="lg:col-span-3 py-6 lg:pr-8">
             <div className="h-3 w-20 bg-gray-100 rounded-full mb-4" />
             <div className="space-y-6">
@@ -150,6 +103,7 @@ function QueueSkeleton() {
               </div>
             </div>
 
+            {/* Controls */}
             <div className="flex items-center gap-2 pt-5 mt-6 border-t border-gray-100">
               <div className="h-8 w-16 bg-gray-100 rounded-full" />
               <div className="flex-1" />
@@ -159,6 +113,7 @@ function QueueSkeleton() {
             </div>
           </div>
 
+          {/* Queue */}
           <div className="lg:col-span-2 py-6 lg:pl-8">
             <div className="h-3 w-12 bg-gray-100 rounded-full mb-5" />
             <div className="space-y-3">

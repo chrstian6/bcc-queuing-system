@@ -4,10 +4,23 @@
 import connectDB from "@/lib/mongodb";
 import Counter from "@/models/Counter";
 import Staff from "@/models/Staff";
+import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
+import { ROLES } from "@/lib/roles";
+import { getSystemSettings } from "./system-settings";
+import { evaluateCounterState } from "@/lib/counterSettings";
+import { getAppDayRange, getAppNowMinutes } from "@/lib/time";
+
+export type DistributionFailureReason =
+  | "queue-closed"
+  | "no-staff"
+  | "outside-hours"
+  | "counters-closed"
+  | "capacity-reached";
 
 interface TicketNumberResult {
   success: boolean;
   error?: string;
+  failureReason?: DistributionFailureReason;
   ticketNumber?: string;
   ticketId?: string;
   queuePosition?: number;
@@ -15,39 +28,44 @@ interface TicketNumberResult {
 }
 
 /**
- * Distribute ticket number for a specific staff member
- * Each staff has their own independent counter that resets daily
- * Format: Just a number sequence (1, 2, 3...)
+ * Distribute ticket number for a specific staff member.
+ * Each staff has their own independent counter that resets daily.
+ * When opts.maxSeq is set, the daily cap is enforced atomically: the filter
+ * only matches counters below the cap, so a counter at the limit makes the
+ * upsert throw E11000 instead of incrementing past it.
  */
 export async function distributeTicketNumber(
   staffId: string,
+  opts?: { maxSeq?: number },
 ): Promise<TicketNumberResult> {
   try {
     await connectDB();
 
-    // Get staff info
     const staff = await Staff.findOne({ staffId });
     if (!staff) {
       return { success: false, error: "Staff not found" };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-
-    // Create unique counter key per staff per day
+    const { start: today, dateStr } = getAppDayRange();
     const counterKey = `STAFF-${staffId}-${dateStr}`;
+
+    const filter: any = { _id: counterKey };
+    if (opts?.maxSeq) {
+      filter.$or = [
+        { seq: { $lt: opts.maxSeq } },
+        { seq: { $exists: false } },
+      ];
+    }
 
     // Atomic increment for this staff's counter
     const result = await Counter.findOneAndUpdate(
-      { _id: counterKey },
+      filter,
       {
         $inc: { seq: 1 },
         $setOnInsert: {
           date: today,
           staffId: staffId,
           department: staff.roleName,
-          createdAt: new Date(),
         },
       },
       {
@@ -74,12 +92,25 @@ export async function distributeTicketNumber(
       staffId: staffId,
     };
   } catch (error: any) {
-    console.error("Error distributing staff ticket number:", error);
-
     if (error.code === 11000) {
+      // Either a concurrent first-create race, or the counter is at the cap
+      // (filter missed an existing doc, so the upsert tried to re-insert it).
       try {
+        if (opts?.maxSeq) {
+          const { dateStr } = getAppDayRange();
+          const existing = await Counter.findOne({
+            _id: `STAFF-${staffId}-${dateStr}`,
+          }).lean();
+          if (existing && (existing.seq || 0) >= opts.maxSeq) {
+            return {
+              success: false,
+              failureReason: "capacity-reached",
+              error: "This counter has reached its daily ticket limit.",
+            };
+          }
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
-        return await distributeTicketNumber(staffId);
+        return await distributeTicketNumber(staffId, opts);
       } catch (retryError) {
         console.error(
           "Retry failed for staff ticket distribution:",
@@ -92,6 +123,7 @@ export async function distributeTicketNumber(
       }
     }
 
+    console.error("Error distributing staff ticket number:", error);
     return {
       success: false,
       error: "Failed to generate ticket number.",
@@ -100,14 +132,25 @@ export async function distributeTicketNumber(
 }
 
 /**
- * Distribute ticket to the least busy staff in a department
- * Automatically assigns to the staff with fewest tickets
+ * Distribute ticket to the least busy eligible staff in a department.
+ * Eligibility: global queue open, counter open, within hours, not on break,
+ * and under the counter's daily limit. Distinct failure reasons are returned
+ * so the UI can explain why creation is unavailable.
  */
 export async function distributeTicketToAvailableStaff(
   department: string,
 ): Promise<TicketNumberResult> {
   try {
     await connectDB();
+
+    const settingsResult = await getSystemSettings();
+    if (settingsResult.queueOpen === false) {
+      return {
+        success: false,
+        failureReason: "queue-closed",
+        error: "The queue is currently closed by the administrator.",
+      };
+    }
 
     // Find all active staff in this department
     const departmentStaff = await Staff.find({
@@ -118,35 +161,79 @@ export async function distributeTicketToAvailableStaff(
     if (!departmentStaff || departmentStaff.length === 0) {
       return {
         success: false,
+        failureReason: "no-staff",
         error: `No available staff in ${department} department`,
       };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    const { dateStr } = getAppDayRange();
+    const nowMinutes = getAppNowMinutes();
 
-    // Get today's counters for all staff in department
-    const staffLoads = await Promise.all(
+    // Evaluate every counter's state and load
+    const counters = await Promise.all(
       departmentStaff.map(async (staff) => {
         const counterKey = `STAFF-${staff.staffId}-${dateStr}`;
         const counter = await Counter.findOne({ _id: counterKey }).lean();
-
+        const load = counter ? counter.seq || 0 : 0;
+        const evaluation = evaluateCounterState(staff, load, nowMinutes);
         return {
           staffId: staff.staffId,
-          staffName: `${staff.firstName} ${staff.lastName}`,
-          currentLoad: counter ? counter.seq : 0,
+          load,
+          state: evaluation.state,
+          dailyLimit: evaluation.settings.dailyLimit,
+          accepting: evaluation.accepting,
         };
       }),
     );
 
-    // Find the staff with the lowest load
-    const leastBusyStaff = staffLoads.reduce((min, staff) =>
-      staff.currentLoad < min.currentLoad ? staff : min,
-    );
+    let eligible = counters.filter((c) => c.accepting);
 
-    // Assign ticket to least busy staff
-    return await distributeTicketNumber(leastBusyStaff.staffId);
+    if (eligible.length === 0) {
+      const states = counters.map((c) => c.state);
+      if (states.every((s) => s === "outside-hours")) {
+        return {
+          success: false,
+          failureReason: "outside-hours",
+          error: "Cashier counters are outside operating hours.",
+        };
+      }
+      if (states.some((s) => s === "full")) {
+        return {
+          success: false,
+          failureReason: "capacity-reached",
+          error: "Today's queue has reached capacity.",
+        };
+      }
+      return {
+        success: false,
+        failureReason: "counters-closed",
+        error: "All cashier counters are temporarily closed or on break.",
+      };
+    }
+
+    // Try least-loaded first; if a counter fills up in a race, exclude it
+    // and fall back to the next one.
+    while (eligible.length > 0) {
+      const leastBusy = eligible.reduce((min, staff) =>
+        staff.load < min.load ? staff : min,
+      );
+
+      const result = await distributeTicketNumber(leastBusy.staffId, {
+        maxSeq: leastBusy.dailyLimit,
+      });
+
+      if (result.failureReason !== "capacity-reached") {
+        return result;
+      }
+
+      eligible = eligible.filter((c) => c.staffId !== leastBusy.staffId);
+    }
+
+    return {
+      success: false,
+      failureReason: "capacity-reached",
+      error: "Today's queue has reached capacity.",
+    };
   } catch (error: any) {
     console.error("Error distributing to available staff:", error);
     return {
@@ -201,9 +288,7 @@ export async function getDepartmentStaffCounters(department: string) {
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    const { start: today, end: tomorrow } = getAppDayRange();
 
     // Find all active staff in this department
     const allDepartmentStaff = await Staff.find({
@@ -217,7 +302,7 @@ export async function getDepartmentStaffCounters(department: string) {
       department: department,
       date: {
         $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+        $lt: tomorrow,
       },
     }).lean();
 
@@ -357,6 +442,9 @@ export async function resetStaffCounter(staffId: string): Promise<{
   message?: string;
 }> {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
 
     const today = new Date();
@@ -389,6 +477,9 @@ export async function resetDepartmentCounters(department: string): Promise<{
   message?: string;
 }> {
   try {
+    const session = await requireRole(ROLES.ADMIN);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
     await connectDB();
 
     const today = new Date();
