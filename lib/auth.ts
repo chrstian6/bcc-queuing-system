@@ -55,6 +55,17 @@ export const {
               status: "active",
             }).select("+password");
 
+            console.log(
+              "🔍 [STAFF] Lookup result:",
+              staff
+                ? {
+                    email: staff.email,
+                    roleName: staff.roleName,
+                    hasPasswordField: !!staff.password,
+                  }
+                : "NOT FOUND",
+            );
+
             if (!staff) {
               throw new Error("Invalid email or password");
             }
@@ -69,6 +80,8 @@ export const {
             const isPasswordValid = await staff.comparePassword(
               credentials.password as string,
             );
+
+            console.log("🔑 [STAFF] Password valid:", isPasswordValid);
 
             if (!isPasswordValid) {
               throw new Error("Invalid email or password");
@@ -94,17 +107,37 @@ export const {
               email: (credentials.email as string).toLowerCase().trim(),
             }).select("+password");
 
+            console.log(
+              "🔍 [USER] Lookup result:",
+              user
+                ? {
+                    email: user.email,
+                    role: user.role,
+                    expectedRole: roleNumber,
+                    hasPasswordField: !!user.password,
+                    passwordHashPrefix: user.password
+                      ? user.password.substring(0, 7)
+                      : null,
+                  }
+                : "NOT FOUND",
+            );
+
             if (!user) {
               throw new Error("Invalid email or password");
             }
 
             if (user.role !== roleNumber) {
+              console.log(
+                `⚠️ Role mismatch: DB has ${user.role}, form sent ${roleNumber}`,
+              );
               throw new Error(`Invalid credentials for this role`);
             }
 
             const isPasswordValid = await user.comparePassword(
               credentials.password as string,
             );
+
+            console.log("🔑 [USER] Password valid:", isPasswordValid);
 
             if (!isPasswordValid) {
               throw new Error("Invalid email or password");

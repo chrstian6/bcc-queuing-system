@@ -1,7 +1,7 @@
 // components/registrar/AllTicketsView.tsx
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -12,7 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
-import { getStaffTickets } from "@/actions/ticket";
+import { getStaffAllTickets } from "@/actions/ticket";
 import { getDepartmentStaffCounters } from "@/actions/ticketNumberDistribution";
 
 interface AllTicketsViewProps {
@@ -81,11 +81,6 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       setIsLoading(true);
       setLoadError(null);
 
-      console.log(
-        "🔄 AllTicketsView: Loading tickets for department:",
-        department,
-      );
-
       const sessionResult = await getSession();
       if (!sessionResult.success || !sessionResult.session) {
         router.push("/?error=unauthorized");
@@ -100,25 +95,20 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       }
 
       setStaffId(userStaffId);
-      console.log("AllTicketsView: Fetching tickets for staffId:", userStaffId);
 
-      // Fetch tickets WITHOUT date filter to get all tickets
       const filters: any = {};
       if (statusFilter !== "all") {
         filters.status = statusFilter;
       }
 
-      const result = await getStaffTickets(userStaffId, filters);
-      console.log("AllTicketsView: Tickets result:", {
-        success: result.success,
-        count: result.tickets?.length,
-      });
+      const result = await getStaffAllTickets(userStaffId, filters);
 
       if (result.success) {
         setTickets(result.tickets || []);
         setDisplayCount(20);
       } else {
         console.error("Failed to fetch tickets:", result.error);
+        setLoadError(result.error || "Failed to fetch tickets");
         setTickets([]);
       }
 

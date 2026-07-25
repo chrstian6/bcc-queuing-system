@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
 import {
-  getStaffTickets,
+  getStaffQueueData,
   serveTicket,
   completeServedTicket,
   cancelTicket,
@@ -179,7 +179,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           setIsLoading(false);
           return;
         }
-        const ticketsResult = await getStaffTickets(staffId);
+        const ticketsResult = await getStaffQueueData(staffId);
         if (ticketsResult?.success) {
           const tickets: Ticket[] = ticketsResult.tickets;
           const serving =
@@ -298,7 +298,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
   const autoServeNext = useCallback(async () => {
     if (!user?.staffId) return;
 
-    const ticketsResult = await getStaffTickets(user.staffId);
+    const ticketsResult = await getStaffQueueData(user.staffId);
     if (!ticketsResult?.success) return;
 
     const tickets: Ticket[] = ticketsResult.tickets;
