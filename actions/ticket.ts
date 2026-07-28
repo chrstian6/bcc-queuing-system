@@ -17,12 +17,6 @@ import {
 } from "@/lib/authz";
 import { ROLES } from "@/lib/roles";
 import { getAppDayRange } from "@/lib/time";
-import {
-  buildServingUpdate,
-  buildAdminServingUpdate,
-  buildCompletedUpdate,
-  buildCancelledUpdate,
-} from "@/lib/ticketTransitions";
 
 interface StudentData {
   schoolId: string;
@@ -173,7 +167,6 @@ export async function createTicket(
     };
   }
 
-  // Guardian validation - only when requesterType is guardian
   if (data.requesterType === "guardian") {
     if (!data.guardian || !data.guardian.firstName || !data.guardian.lastName) {
       return {
@@ -198,7 +191,7 @@ export async function createTicket(
       transactionType: data.transactionType as any,
       status: { $in: ["pending", "serving"] as any },
       createdAt: { $gte: today, $lt: tomorrow },
-    });
+    } as any);
 
     if (existingTicket) {
       const formattedType = data.transactionType.replace(/-/g, " ");
@@ -227,7 +220,6 @@ export async function createTicket(
               !numberResult.ticketNumber ||
               !numberResult.ticketId
             ) {
-              // Availability failures get friendly, specific copy
               const reasonMessages: Record<string, string> = {
                 "queue-closed":
                   "The queue is currently closed by the administrator. Please try again later.",
@@ -254,7 +246,6 @@ export async function createTicket(
               );
             }
 
-            // Only create guardian if requesterType is guardian AND all required fields are present
             const guardianData =
               data.requesterType === "guardian" &&
               data.guardian &&
@@ -396,7 +387,7 @@ export async function createTicket(
 export async function getTicketByNumber(ticketNumber: string) {
   try {
     await connectDB();
-    const ticket = await Ticket.findOne({ ticketNumber }).lean();
+    const ticket = await Ticket.findOne({ ticketNumber } as any).lean();
     if (!ticket) return { success: false, error: "Ticket not found" };
     return { success: true, ticket: JSON.parse(JSON.stringify(ticket)) };
   } catch (error) {
@@ -430,7 +421,7 @@ export async function getPendingTickets() {
       department: "cashier" as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: 1 })
       .lean();
 
@@ -452,7 +443,7 @@ export async function getTodayTickets() {
     const tickets = await Ticket.find({
       department: "cashier" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: -1 })
       .lean();
 
@@ -472,7 +463,7 @@ export async function getTicketsByType(transactionType: string) {
     const tickets = await Ticket.find({
       department: "cashier" as any,
       transactionType: transactionType as any,
-    })
+    } as any)
       .sort({ createdAt: -1 })
       .lean();
     return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
@@ -501,26 +492,26 @@ export async function getQueueStats() {
         department: "cashier" as any,
         status: { $in: ["pending", "serving"] as any },
         createdAt: { $gte: today, $lt: tomorrow },
-      }),
+      } as any),
       Ticket.countDocuments({
         department: "cashier" as any,
         status: "pending" as any,
         createdAt: { $gte: today, $lt: tomorrow },
-      }),
+      } as any),
       Ticket.countDocuments({
         department: "cashier" as any,
         status: "serving" as any,
         createdAt: { $gte: today, $lt: tomorrow },
-      }),
+      } as any),
       Ticket.countDocuments({
         department: "cashier" as any,
         status: "completed" as any,
         createdAt: { $gte: today, $lt: tomorrow },
-      }),
+      } as any),
       Ticket.countDocuments({
         department: "cashier" as any,
         createdAt: { $gte: today, $lt: tomorrow },
-      }),
+      } as any),
     ]);
 
     return {
@@ -551,7 +542,7 @@ export async function getNextToServe() {
       department: "cashier" as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: 1 })
       .lean();
 
@@ -561,7 +552,7 @@ export async function getNextToServe() {
       department: "cashier" as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    });
+    } as any);
 
     return {
       success: true,
@@ -574,6 +565,10 @@ export async function getNextToServe() {
   }
 }
 
+// ============================================================
+// FIXED FUNCTIONS - Use simple update objects instead of pipelines
+// ============================================================
+
 export async function serveNextTicket() {
   try {
     const session = await requireRole(ROLES.ADMIN);
@@ -581,15 +576,29 @@ export async function serveNextTicket() {
 
     await connectDB();
     const { start: today, end: tomorrow } = getAppDayRange();
+    const now = new Date();
 
     const nextTicket = await Ticket.findOneAndUpdate(
       {
-        department: "cashier" as any,
-        status: "pending" as any,
+        department: "cashier",
+        status: "pending",
         createdAt: { $gte: today, $lt: tomorrow },
+      } as any,
+      {
+        $set: {
+          status: "serving",
+          servedBy: "admin",
+          servedAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "serving",
+            timestamp: now,
+            changedBy: "admin",
+          },
+        },
       },
-      buildAdminServingUpdate(),
-      { sort: { createdAt: 1 }, returnDocument: "after" },
+      { sort: { createdAt: 1 }, returnDocument: "after", new: true } as any,
     );
 
     if (!nextTicket) return { success: false, error: "No pending tickets" };
@@ -614,10 +623,24 @@ export async function completeTicket(ticketNumber: string) {
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
+    const now = new Date();
+
     const ticket = await Ticket.findOneAndUpdate(
-      { ticketNumber, status: "serving" as any },
-      buildCompletedUpdate("admin"),
-      { returnDocument: "after" },
+      { ticketNumber, status: "serving" } as any,
+      {
+        $set: {
+          status: "completed",
+          completedAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "completed",
+            timestamp: now,
+            changedBy: "admin",
+          },
+        },
+      },
+      { returnDocument: "after", new: true } as any,
     );
 
     if (!ticket)
@@ -651,10 +674,27 @@ export async function cancelTicket(ticketNumber: string) {
         : session.user.staffId || "staff";
 
     await connectDB();
+    const now = new Date();
+
     const ticket = await Ticket.findOneAndUpdate(
-      { ticketNumber, status: { $in: ["pending", "serving"] as any } },
-      buildCancelledUpdate(changedBy),
-      { returnDocument: "after" },
+      {
+        ticketNumber,
+        status: { $in: ["pending", "serving"] },
+      } as any,
+      {
+        $set: {
+          status: "cancelled",
+          cancelledAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "cancelled",
+            timestamp: now,
+            changedBy: changedBy,
+          },
+        },
+      },
+      { returnDocument: "after", new: true } as any,
     );
 
     if (!ticket)
@@ -686,36 +726,33 @@ export async function updateTicketStatus(
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
-    const updateData =
-      status === "serving"
-        ? buildAdminServingUpdate()
-        : status === "completed"
-          ? buildCompletedUpdate("admin")
-          : status === "cancelled"
-            ? buildCancelledUpdate("admin")
-            : [
-                {
-                  $set: {
-                    status: "pending",
-                    statusHistory: {
-                      $concatArrays: [
-                        { $ifNull: ["$statusHistory", []] },
-                        [
-                          {
-                            status: "pending",
-                            timestamp: "$$NOW",
-                            changedBy: "admin",
-                          },
-                        ],
-                      ],
-                    },
-                  },
-                },
-              ];
+    const now = new Date();
 
-    const ticket = await Ticket.findOneAndUpdate({ ticketNumber }, updateData, {
-      returnDocument: "after",
-    });
+    const updateData: any = {
+      $set: { status: status },
+      $push: {
+        statusHistory: {
+          status: status,
+          timestamp: now,
+          changedBy: "admin",
+        },
+      },
+    };
+
+    if (status === "serving") {
+      updateData.$set.servedAt = now;
+      updateData.$set.servedBy = "admin";
+    } else if (status === "completed") {
+      updateData.$set.completedAt = now;
+    } else if (status === "cancelled") {
+      updateData.$set.cancelledAt = now;
+    }
+
+    const ticket = await Ticket.findOneAndUpdate(
+      { ticketNumber } as any,
+      updateData,
+      { returnDocument: "after", new: true } as any,
+    );
 
     if (!ticket) return { success: false, error: "Ticket not found" };
 
@@ -755,7 +792,9 @@ export async function getAllTickets(filters?: {
       query.createdAt = { $gte: date, $lt: nextDate };
     }
 
-    const tickets = await Ticket.find(query).sort({ createdAt: -1 }).lean();
+    const tickets = await Ticket.find(query as any)
+      .sort({ createdAt: -1 })
+      .lean();
     return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
   } catch (error) {
     console.error("Error fetching all tickets:", error);
@@ -791,7 +830,9 @@ export async function getDepartmentTickets(
       query.createdAt = { $gte: today, $lt: tomorrow };
     }
 
-    const tickets = await Ticket.find(query).sort({ createdAt: 1 }).lean();
+    const tickets = await Ticket.find(query as any)
+      .sort({ createdAt: 1 })
+      .lean();
     return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
   } catch (error) {
     console.error("Error fetching cashier tickets:", error);
@@ -799,34 +840,79 @@ export async function getDepartmentTickets(
   }
 }
 
-export async function getStaffTickets(
+/**
+ * Get ALL pending/serving cashier tickets for the Serve view
+ */
+export async function getStaffQueueData(staffId: string) {
+  try {
+    const session = await requireSelfStaffOrAdmin(staffId);
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
+    await connectDB();
+
+    const query: any = {
+      department: "cashier",
+      status: { $in: ["pending", "serving"] },
+    };
+
+    const tickets = await Ticket.find(query as any)
+      .sort({ createdAt: 1 })
+      .lean();
+
+    return {
+      success: true,
+      tickets: JSON.parse(JSON.stringify(tickets)),
+    };
+  } catch (error) {
+    console.error("Error fetching staff queue data:", error);
+    return { success: false, error: "Failed to fetch queue data" };
+  }
+}
+
+/**
+ * Get ALL cashier tickets for history view
+ */
+export async function getStaffAllTickets(
   staffId: string,
   filters?: { status?: string; date?: string },
 ) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireSelfStaffOrAdmin(staffId);
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
-    const query: any = {
-      department: "cashier" as any,
-      $or: [{ servedBy: staffId }, { assignedTo: staffId }],
-    };
-    if (filters?.status) query.status = filters.status as any;
-    if (filters?.date) {
-      const date = new Date(filters.date);
-      date.setHours(0, 0, 0, 0);
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-      query.createdAt = { $gte: date, $lt: nextDate };
+
+    const query: any = { department: "cashier" };
+
+    if (filters?.status && filters.status !== "all") {
+      if (filters.status === "pending") {
+        query.status = { $in: ["pending", "waiting"] };
+      } else if (filters.status === "cancelled") {
+        query.status = { $in: ["cancelled", "no-show", "skipped"] };
+      } else {
+        query.status = filters.status;
+      }
     }
 
-    const tickets = await Ticket.find(query).sort({ createdAt: -1 }).lean();
-    return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
+    const tickets = await Ticket.find(query as any)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return {
+      success: true,
+      tickets: JSON.parse(JSON.stringify(tickets)),
+    };
   } catch (error) {
-    console.error("Error fetching staff tickets:", error);
-    return { success: false, error: "Failed to fetch staff tickets" };
+    console.error("Error fetching all staff tickets:", error);
+    return { success: false, error: "Failed to fetch tickets" };
   }
+}
+
+export async function getStaffTickets(
+  staffId: string,
+  filters?: { status?: string; date?: string },
+) {
+  return getStaffAllTickets(staffId, filters);
 }
 
 export async function getNextTicketForStaff(staffId: string) {
@@ -835,7 +921,7 @@ export async function getNextTicketForStaff(staffId: string) {
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
-    const staff = await Staff.findOne({ staffId });
+    const staff = await Staff.findOne({ staffId } as any);
     if (!staff) return { success: false, error: "Staff not found" };
 
     const { start: today, end: tomorrow } = getAppDayRange();
@@ -844,7 +930,7 @@ export async function getNextTicketForStaff(staffId: string) {
       department: "cashier" as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: 1 })
       .lean();
 
@@ -858,7 +944,7 @@ export async function getNextTicketForStaff(staffId: string) {
       department: "cashier" as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    });
+    } as any);
 
     return {
       success: true,
@@ -877,20 +963,40 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
-    const staff = await Staff.findOne({ staffId });
+    const staff = await Staff.findOne({ staffId } as any);
     if (!staff) return { success: false, error: "Staff not found" };
 
+    const now = new Date();
+
     const ticket = await Ticket.findOneAndUpdate(
-      { ticketNumber, status: "pending" as any, department: "cashier" as any },
-      buildServingUpdate(staffId),
-      { returnDocument: "after" },
+      {
+        ticketNumber,
+        status: "pending",
+        department: "cashier",
+      } as any,
+      {
+        $set: {
+          status: "serving",
+          servedBy: staffId,
+          servedAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "serving",
+            timestamp: now,
+            changedBy: staffId,
+          },
+        },
+      },
+      { returnDocument: "after", new: true } as any,
     );
 
-    if (!ticket)
+    if (!ticket) {
       return {
         success: false,
         error: "Ticket not found or already being served",
       };
+    }
 
     revalidatePath("/staff/cashier/dashboard");
     revalidatePath("/staff/cashier/queue");
@@ -913,10 +1019,28 @@ export async function completeServedTicket(
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
+    const now = new Date();
+
     const ticket = await Ticket.findOneAndUpdate(
-      { ticketNumber, status: "serving" as any, servedBy: staffId },
-      buildCompletedUpdate(staffId),
-      { returnDocument: "after" },
+      {
+        ticketNumber,
+        status: "serving",
+        servedBy: staffId,
+      } as any,
+      {
+        $set: {
+          status: "completed",
+          completedAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "completed",
+            timestamp: now,
+            changedBy: staffId,
+          },
+        },
+      },
+      { returnDocument: "after", new: true } as any,
     );
 
     if (!ticket)
@@ -943,7 +1067,7 @@ export async function getStaffQueueStats(staffId: string) {
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
-    const staff = await Staff.findOne({ staffId });
+    const staff = await Staff.findOne({ staffId } as any);
     if (!staff) return { success: false, error: "Staff not found" };
 
     const { start: today, end: tomorrow } = getAppDayRange();
@@ -954,21 +1078,21 @@ export async function getStaffQueueStats(staffId: string) {
           department: "cashier" as any,
           status: "pending" as any,
           createdAt: { $gte: today, $lt: tomorrow },
-        }),
+        } as any),
         Ticket.countDocuments({
           servedBy: staffId,
           status: "serving" as any,
           createdAt: { $gte: today, $lt: tomorrow },
-        }),
+        } as any),
         Ticket.countDocuments({
           servedBy: staffId,
           status: "completed" as any,
           createdAt: { $gte: today, $lt: tomorrow },
-        }),
+        } as any),
         Ticket.countDocuments({
           department: "cashier" as any,
           createdAt: { $gte: today, $lt: tomorrow },
-        }),
+        } as any),
       ]);
 
     return {

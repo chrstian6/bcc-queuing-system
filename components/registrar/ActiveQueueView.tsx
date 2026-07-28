@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { getSession } from "@/actions/auth";
 import {
-  getStaffTickets,
+  getStaffQueueData,
   serveTicket,
   completeServedTicket,
   cancelTicket,
@@ -59,8 +59,8 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
       setStaffId(userStaffId);
 
-      // Load ALL staff's tickets
-      const ticketsResult = await getStaffTickets(userStaffId);
+      // Use getStaffQueueData instead of getStaffTickets
+      const ticketsResult = await getStaffQueueData(userStaffId);
 
       if (ticketsResult && ticketsResult.success) {
         const tickets = ticketsResult.tickets || [];
@@ -70,11 +70,9 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
           (t: any) => t.status === "serving" && t.servedBy === userStaffId,
         );
 
-        // Find pending tickets for this department
+        // Find pending tickets
         const waiting = tickets
-          .filter(
-            (t: any) => t.status === "pending" && t.department === department,
-          )
+          .filter((t: any) => t.status === "pending")
           .sort((a: any, b: any) => {
             const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
             const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -104,7 +102,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [department, router]);
+  }, [router]);
 
   // Initial load and auto-refresh
   useEffect(() => {

@@ -1,4 +1,4 @@
-// actions/ticket-cleanup.ts
+// app/actions/ticket-cleanup.ts
 "use server";
 
 import connectDB from "@/lib/mongodb";
@@ -6,7 +6,6 @@ import Ticket from "@/models/Ticket";
 import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
 import { ROLES } from "@/lib/roles";
 import { getAppDayRange } from "@/lib/time";
-import { buildCancelledUpdate } from "@/lib/ticketTransitions";
 
 export async function cancelPreviousDayTickets() {
   try {
@@ -16,13 +15,26 @@ export async function cancelPreviousDayTickets() {
     await connectDB();
 
     const { start: today } = getAppDayRange();
+    const now = new Date();
 
     const result = await Ticket.updateMany(
       {
         status: "pending",
         createdAt: { $lt: today },
-      },
-      buildCancelledUpdate("system-cleanup"),
+      } as any,
+      {
+        $set: {
+          status: "cancelled",
+          cancelledAt: now,
+        },
+        $push: {
+          statusHistory: {
+            status: "cancelled",
+            timestamp: now,
+            changedBy: "system-cleanup",
+          },
+        },
+      } as any,
     );
 
     return {
