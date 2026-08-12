@@ -14,6 +14,7 @@ import {
 import { getSession } from "@/actions/auth";
 import { getStaffAllTickets } from "@/actions/ticket";
 import { getDepartmentStaffCounters } from "@/actions/ticketNumberDistribution";
+import { filterTicketsByRole } from "@/lib/ticketUtils";
 
 interface AllTicketsViewProps {
   department: string;
@@ -67,6 +68,7 @@ function HistorySkeleton() {
 export function AllTicketsView({ department }: AllTicketsViewProps) {
   const router = useRouter();
   const [staffId, setStaffId] = useState<string | null>(null);
+  const [staffRole, setStaffRole] = useState<string>("");
   const [tickets, setTickets] = useState<any[]>([]);
   const [staffCounters, setStaffCounters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +90,8 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       }
 
       const userStaffId = sessionResult.session.user?.staffId;
+      const userStaffRole = sessionResult.session.user?.staffRole || department;
+
       if (!userStaffId) {
         setLoadError("Staff ID not found");
         setIsLoading(false);
@@ -95,6 +99,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       }
 
       setStaffId(userStaffId);
+      setStaffRole(userStaffRole);
 
       const filters: any = {};
       if (statusFilter !== "all") {
@@ -104,7 +109,12 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       const result = await getStaffAllTickets(userStaffId, filters);
 
       if (result.success) {
-        setTickets(result.tickets || []);
+        // Filter tickets by role (dean sees only dean tickets, cashier sees only cashier tickets)
+        const filtered = filterTicketsByRole(
+          result.tickets || [],
+          userStaffRole,
+        );
+        setTickets(filtered);
         setDisplayCount(20);
       } else {
         console.error("Failed to fetch tickets:", result.error);
@@ -225,6 +235,8 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
     ).length,
   };
 
+  const roleLabel = staffRole === "dean" ? "Dean" : "Cashier";
+
   if (isLoading) {
     return <HistorySkeleton />;
   }
@@ -254,7 +266,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-            History
+            {roleLabel} History
           </h2>
           <p className="text-xs text-gray-400 mt-0.5">
             {filteredTickets.length} ticket
@@ -330,7 +342,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
             <p className="text-xs text-gray-500">No tickets found</p>
             <p className="text-xs text-gray-400 mt-1">
               {statusFilter === "all"
-                ? "Ticket history will appear here"
+                ? `${roleLabel} ticket history will appear here`
                 : `No ${statusFilter} tickets`}
             </p>
           </div>

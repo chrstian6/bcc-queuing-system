@@ -218,9 +218,14 @@ function LiveQueueContent() {
           setQueueStatus(data.queueStatus);
         }
         if (data.departments) {
-          setDepartments(data.departments);
+          // Filter to only Dean and Cashier
+          const filteredDepartments = data.departments.filter(
+            (d: DepartmentQueue) =>
+              d.department === "dean" || d.department === "cashier",
+          );
+          setDepartments(filteredDepartments);
           setLastUpdated(new Date(data.timestamp));
-          const totalLoad = data.departments.reduce(
+          const totalLoad = filteredDepartments.reduce(
             (sum: number, d: DepartmentQueue) =>
               sum + d.waiting + (d.serving ? 1 : 0),
             0,
@@ -278,10 +283,15 @@ function LiveQueueContent() {
     selectedDept === "all"
       ? allWaitingTickets
       : allWaitingTickets.filter((t) => t.department === selectedDept);
+
   const totalTickets = departments.reduce(
     (sum, d) => sum + d.waiting + (d.serving ? 1 : 0),
     0,
   );
+
+  // Separate departments for display
+  const deanDept = departments.find((d) => d.department === "dean");
+  const cashierDept = departments.find((d) => d.department === "cashier");
 
   return (
     <div className="min-h-screen bg-white">
@@ -338,7 +348,7 @@ function LiveQueueContent() {
             Live Queue Monitor
           </h1>
           <p className="text-xs text-gray-400" style={FONT}>
-            Registrar & Cashier • {totalTickets} active • Voice on
+            Dean's Office & Cashier • {totalTickets} active • Voice on
           </p>
         </div>
 
@@ -375,45 +385,84 @@ function LiveQueueContent() {
           <SleekChart dataPoints={history} />
         </div>
 
-        {/* Now Serving - BIG NUMBERS */}
+        {/* Now Serving - Dean and Cashier SEPARATELY */}
         <div className="px-6 py-5 border-b border-gray-100">
-          <div className="grid grid-cols-2 gap-6">
-            {departments.map((dept) => (
-              <div key={dept.department}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span
-                    className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
-                    style={FONT}
-                  >
-                    {dept.displayName}
-                  </span>
-                </div>
-                <div className="flex items-baseline gap-4">
-                  {dept.serving ? (
-                    <span
-                      className="text-4xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
-                      style={FONT}
-                    >
-                      #{dept.serving}
-                    </span>
-                  ) : (
-                    <span
-                      className="text-4xl font-extrabold text-gray-200 tracking-tight"
-                      style={FONT}
-                    >
-                      —
-                    </span>
-                  )}
-                  <span
-                    className="text-sm text-gray-400 font-medium"
-                    style={FONT}
-                  >
-                    {dept.waiting} waiting
-                  </span>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Dean Section */}
+            <div className="border border-gray-100 rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span
+                  className={`w-2 h-2 rounded-full ${deanDept?.serving ? "bg-green-500 animate-pulse" : "bg-gray-300"}`}
+                />
+                <span
+                  className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+                  style={FONT}
+                >
+                  Dean's Office
+                </span>
               </div>
-            ))}
+              <div className="flex items-baseline gap-4">
+                {deanDept?.serving ? (
+                  <span
+                    className="text-5xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
+                    style={FONT}
+                  >
+                    #{deanDept.serving}
+                  </span>
+                ) : (
+                  <span
+                    className="text-5xl font-extrabold text-gray-200 tracking-tight"
+                    style={FONT}
+                  >
+                    —
+                  </span>
+                )}
+                <span
+                  className="text-sm text-gray-400 font-medium"
+                  style={FONT}
+                >
+                  {deanDept?.waiting || 0} waiting
+                </span>
+              </div>
+            </div>
+
+            {/* Cashier Section */}
+            <div className="border border-gray-100 rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span
+                  className={`w-2 h-2 rounded-full ${cashierDept?.serving ? "bg-green-500 animate-pulse" : "bg-gray-300"}`}
+                />
+                <span
+                  className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+                  style={FONT}
+                >
+                  Cashier
+                </span>
+              </div>
+              <div className="flex items-baseline gap-4">
+                {cashierDept?.serving ? (
+                  <span
+                    className="text-5xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
+                    style={FONT}
+                  >
+                    #{cashierDept.serving}
+                  </span>
+                ) : (
+                  <span
+                    className="text-5xl font-extrabold text-gray-200 tracking-tight"
+                    style={FONT}
+                  >
+                    —
+                  </span>
+                )}
+                <span
+                  className="text-sm text-gray-400 font-medium"
+                  style={FONT}
+                >
+                  {cashierDept?.waiting || 0} waiting
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -426,16 +475,20 @@ function LiveQueueContent() {
             >
               All ({allWaitingTickets.length})
             </button>
-            {departments.map((dept) => (
-              <button
-                key={dept.department}
-                onClick={() => setSelectedDept(dept.department)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selectedDept === dept.department ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
-                style={FONT}
-              >
-                {dept.displayName} ({(dept.waitingList || []).length})
-              </button>
-            ))}
+            <button
+              onClick={() => setSelectedDept("dean")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selectedDept === "dean" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+              style={FONT}
+            >
+              Dean ({(deanDept?.waitingList || []).length})
+            </button>
+            <button
+              onClick={() => setSelectedDept("cashier")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${selectedDept === "cashier" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+              style={FONT}
+            >
+              Cashier ({(cashierDept?.waitingList || []).length})
+            </button>
           </div>
         </div>
 

@@ -41,12 +41,6 @@ function formatTransactionLabel(type: string, description?: string) {
   return getTransactionLabel(type, description);
 }
 
-function getTransactionShortLabel(type: string) {
-  return type
-    ?.replace(/-/g, " ")
-    .replace(/\b\w/g, (l: string) => l.toUpperCase());
-}
-
 const STATUS_DOT: Record<string, string> = {
   completed: "bg-green-500",
   serving: "bg-blue-500 animate-pulse",
@@ -73,8 +67,8 @@ export default async function StaffDashboardPage({
   const { success, session } = await getSession();
   if (!success || !session) redirect("/?error=unauthorized");
 
-  // Match the layout's policy: cashier ("6") and registrar ("3") only
-  const staffRoles = ["3", "6"];
+  // Match the layout's policy: cashier ("6"), registrar ("3"), and dean ("4")
+  const staffRoles = ["3", "4", "6"];
   if (!staffRoles.includes(session.user?.role || "")) {
     redirect("/?error=forbidden");
   }
@@ -95,7 +89,6 @@ export default async function StaffDashboardPage({
   const roleNames: Record<string, string> = {
     registrar: "Registrar",
     dean: "Dean",
-    dsdw: "DSDW",
     cashier: "Cashier",
   };
   const roleDisplayName = roleNames[role] || "Staff";

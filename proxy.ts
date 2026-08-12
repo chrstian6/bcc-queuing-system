@@ -50,11 +50,10 @@ export default auth((req) => {
     return NextResponse.redirect(homeUrl);
   }
 
-  // Staff portal: registrar ("3") and cashier ("6") only; dean/dsdw have no
-  // portal yet and everyone else is forbidden.
+  // Staff portal: registrar ("3"), dean ("4"), and cashier ("6")
   if (
     pathname.startsWith("/staff") &&
-    !["3", "6"].includes(req.auth.user?.role ?? "")
+    !["3", "4", "6"].includes(req.auth.user?.role ?? "")
   ) {
     const homeUrl = new URL("/", req.url);
     homeUrl.searchParams.set("error", "forbidden");

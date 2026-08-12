@@ -2,7 +2,7 @@
 "use client";
 import { Plus_Jakarta_Sans, Geist, Fraunces } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Building2, Wallet, FileText } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -38,13 +38,33 @@ interface HeroSectionProps {
   imagePath?: string;
 }
 
-// Updated to match TransactionModal transactions
-const transactions = [
+// Three separate transaction lists for each department
+const DEAN_TRANSACTIONS = [
+  { id: "grade-appeal", label: "Grade Appeal" },
+  { id: "academic-concern", label: "Academic Concern" },
+  { id: "course-approval", label: "Course Approval" },
+  { id: "student-discipline", label: "Student Discipline" },
+  { id: "faculty-concern", label: "Faculty Concern" },
+  { id: "curriculum-review", label: "Curriculum Review" },
+  { id: "academic-advisory", label: "Academic Advisory" },
+];
+
+const CASHIER_TRANSACTIONS = [
   { id: "tuition-payment", label: "Tuition Payment" },
   { id: "miscellaneous-fee", label: "Miscellaneous Fee Payment" },
   { id: "document-payment", label: "Document Payment" },
   { id: "other-school-fees", label: "Other School Fees" },
   { id: "assessment", label: "Assessment" },
+];
+
+const REGISTRAR_TRANSACTIONS = [
+  { id: "certificate-enrollment", label: "Certificate of Enrollment" },
+  { id: "transcript-records", label: "Transcript of Records" },
+  { id: "request-grades", label: "Request for Grades" },
+  { id: "request-assessment", label: "Request for Assessment" },
+  { id: "good-moral", label: "Good Moral Certificate" },
+  { id: "diploma", label: "Diploma" },
+  { id: "other-document", label: "Other Document Request" },
 ];
 
 const stats = [
@@ -63,9 +83,13 @@ export default function HeroSection({
   const [selectedTransaction, setSelectedTransaction] = useState<string | null>(
     null,
   );
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(
+    null,
+  );
+  const [deanPlaceholderIndex, setDeanPlaceholderIndex] = useState(0);
+  const [cashierPlaceholderIndex, setCashierPlaceholderIndex] = useState(0);
+  const [registrarPlaceholderIndex, setRegistrarPlaceholderIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [animatePlaceholder, setAnimatePlaceholder] = useState(true);
   const moundRef = useRef<HTMLDivElement>(null);
   const moundPathRef = useRef<SVGPathElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
@@ -76,14 +100,17 @@ export default function HeroSection({
     { id: 3, name: "carlos garcia", type: "next", visible: true },
   ]);
 
+  // Rotate placeholders for each dropdown
   useEffect(() => {
     if (isPaused || selectedTransaction) return;
     const interval = setInterval(() => {
-      setAnimatePlaceholder(false);
-      setTimeout(() => {
-        setPlaceholderIndex((prev) => (prev + 1) % transactions.length);
-        setAnimatePlaceholder(true);
-      }, 300);
+      setDeanPlaceholderIndex((prev) => (prev + 1) % DEAN_TRANSACTIONS.length);
+      setCashierPlaceholderIndex(
+        (prev) => (prev + 1) % CASHIER_TRANSACTIONS.length,
+      );
+      setRegistrarPlaceholderIndex(
+        (prev) => (prev + 1) % REGISTRAR_TRANSACTIONS.length,
+      );
     }, 2500);
     return () => clearInterval(interval);
   }, [isPaused, selectedTransaction]);
@@ -134,7 +161,7 @@ export default function HeroSection({
     return () => timers.forEach((timer) => clearTimeout(timer));
   }, []);
 
-  // Mound grow-on-scroll: animate path control points directly
+  // Mound grow-on-scroll
   useEffect(() => {
     const moundPath = moundPathRef.current;
     const section = sectionRef.current;
@@ -188,8 +215,9 @@ export default function HeroSection({
     };
   }, []);
 
-  const handleTransactionSelect = (value: string) => {
+  const handleTransactionSelect = (value: string, department: string) => {
     setSelectedTransaction(value);
+    setSelectedDepartment(department);
     setIsPaused(true);
     setTimeout(() => {
       setIsModalOpen(true);
@@ -202,26 +230,18 @@ export default function HeroSection({
     );
   };
 
-  const currentPlaceholder = transactions[placeholderIndex];
-
   return (
     <>
       <section
         ref={sectionRef}
         className={`${plusJakarta.variable} ${geist.variable} ${fraunces.variable} relative overflow-hidden bg-white min-h-screen flex flex-col justify-center items-center`}
-        style={{
-          marginBottom: 0,
-          paddingBottom: 0,
-        }}
+        style={{ marginBottom: 0, paddingBottom: 0 }}
       >
-        {/* Mound — fixed 260px container, path animates internally */}
+        {/* Mound */}
         <div
           ref={moundRef}
           className="absolute bottom-0 left-0 right-0 pointer-events-none z-0"
-          style={{
-            height: "260px",
-            marginBottom: 0,
-          }}
+          style={{ height: "260px", marginBottom: 0 }}
         >
           <svg
             viewBox="0 0 1440 260"
@@ -244,7 +264,7 @@ export default function HeroSection({
           </svg>
         </div>
 
-        <div className="relative z-10 w-full max-w-2xl mx-auto px-6 md:px-12 lg:px-20 pt-16 pb-72 md:pb-64 text-center">
+        <div className="relative z-10 w-full max-w-4xl mx-auto px-6 md:px-12 lg:px-20 pt-16 pb-72 md:pb-64 text-center">
           {/* Live queue status pill */}
           {queueStatus && (
             <div className="mb-4 flex justify-center">
@@ -274,7 +294,7 @@ export default function HeroSection({
               ref={wordsRef}
               className="m-0 p-0 leading-[1.05]"
               style={{
-                fontSize: "clamp(32px, 5vw, 56px)",
+                fontSize: "clamp(28px, 4vw, 48px)",
                 letterSpacing: "-0.03em",
                 fontFamily: "var(--font-fraunces)",
                 color: "#0000CC",
@@ -288,7 +308,7 @@ export default function HeroSection({
 
           {/* Description */}
           <div
-            className="max-w-xl mx-auto mb-10"
+            className="max-w-xl mx-auto mb-8"
             style={{
               animation: "fadeUp 0.6s ease forwards 0.3s",
               opacity: 0,
@@ -304,129 +324,51 @@ export default function HeroSection({
                 fontWeight: 400,
               }}
             >
-              Choose a transaction below and get in line instantly. No more
-              waiting in crowded hallways — just smart, seamless service.
+              Select a department and choose your transaction to get in line.
             </p>
           </div>
 
-          {/* Notifications + Select */}
-          <div className="relative isolate">
-            {/* Floating Notifications */}
-            <div className="absolute inset-0 pointer-events-none overflow-visible -z-10">
-              {notifications.map((notif, index) => {
-                const positions = [
-                  { top: "-20%", left: "-50%" },
-                  { top: "-90%", right: "-40%" },
-                  { top: "120%", right: "-50%" },
-                ];
-                const pos = positions[index % positions.length];
-                const isNext = notif.type === "next";
-                const firstName = notif.name.split(" ")[0];
-                const displayName =
-                  firstName.charAt(0).toUpperCase() + firstName.slice(1);
-                const message = isNext
-                  ? "you're up next — head to the counter!"
-                  : "your slot's confirmed, see you soon!";
-                return (
-                  <div
-                    key={notif.id}
-                    className={`absolute transition-all duration-700 ease-out pointer-events-auto ${
-                      notif.visible
-                        ? "opacity-100 translate-y-0 scale-100"
-                        : "opacity-0 translate-y-4 scale-95"
-                    }`}
-                    style={{
-                      top: pos.top,
-                      left: (pos as any).left,
-                      right: (pos as any).right,
-                      animation: `floatNotif ${2 + index * 0.3}s ease-in-out infinite alternate`,
-                      animationDelay: `${index * 0.5}s`,
-                    }}
-                  >
-                    <div className="relative bg-white border border-black/[0.07] rounded-xl pl-3 pr-6 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.06)] flex items-start gap-2.5 max-w-[200px]">
-                      <div
-                        className={`w-6 h-6 rounded-full bg-[#F8FAFC] border flex items-center justify-center text-[9px] font-semibold text-[#0F172A] flex-shrink-0 ${
-                          isNext
-                            ? "border-[#0000CC]/20"
-                            : "border-emerald-500/20"
-                        }`}
-                      >
-                        {notif.name.charAt(0).toUpperCase()}
-                      </div>
-                      <p
-                        className="text-[10px] leading-snug text-[#334155]"
-                        style={{ fontFamily: "var(--font-geist-sans)" }}
-                      >
-                        <span className="font-semibold text-[#0F172A]">
-                          {displayName}
-                        </span>{" "}
-                        {message}
-                      </p>
-                      <button
-                        onClick={() => dismissNotification(notif.id)}
-                        className="absolute top-1.5 right-1.5 w-3.5 h-3.5 flex items-center justify-center rounded-full text-black/30 hover:text-black/60 hover:bg-black/[0.04] transition-colors"
-                        aria-label="Dismiss notification"
-                      >
-                        <svg
-                          className="w-2 h-2"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2.5}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Select */}
-            <div
-              className="max-w-md mx-auto"
-              style={{
-                animation: "fadeUp 0.6s ease forwards 0.5s",
-                opacity: 0,
-                transform: "translateY(10px)",
-              }}
-            >
+          {/* Three Dropdowns */}
+          <div
+            className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto"
+            style={{
+              animation: "fadeUp 0.6s ease forwards 0.5s",
+              opacity: 0,
+              transform: "translateY(10px)",
+            }}
+          >
+            {/* Dean Dropdown */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2">
+                <Building2 className="w-4 h-4 text-[#0000CC]" />
+                <span
+                  className="text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  Dean's Office
+                </span>
+              </div>
               <Select
                 value={selectedTransaction || undefined}
-                onValueChange={handleTransactionSelect}
+                onValueChange={(value) =>
+                  handleTransactionSelect(value, "dean")
+                }
                 onOpenChange={(open) => setIsPaused(open)}
               >
                 <SelectTrigger
-                  className="w-full px-4 py-6 text-left rounded-xl transition-all duration-200 border-0 shadow-none bg-[#F8FAFC] hover:bg-[#F1F5F9]"
+                  className="w-full px-4 py-3 text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all"
                   style={{ fontFamily: "var(--font-geist-sans)" }}
                 >
                   <SelectValue
                     placeholder={
-                      <span className="inline-flex items-center gap-1 text-[#94A3B8]">
-                        <span
-                          className={`inline-block transition-all duration-300 ${
-                            animatePlaceholder ? "opacity-100" : "opacity-0"
-                          }`}
-                          style={{
-                            animation:
-                              isPaused || selectedTransaction
-                                ? "none"
-                                : "fadeInOut 2.5s ease-in-out infinite",
-                          }}
-                        >
-                          {currentPlaceholder?.label}
-                        </span>
+                      <span className="text-gray-400 text-sm">
+                        {DEAN_TRANSACTIONS[deanPlaceholderIndex]?.label}
                       </span>
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl">
-                  {transactions.map((item) => (
+                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                  {DEAN_TRANSACTIONS.map((item) => (
                     <SelectItem
                       key={item.id}
                       value={item.id}
@@ -435,10 +377,151 @@ export default function HeroSection({
                     >
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${selectedTransaction === item.id ? "bg-[#0000CC]" : "bg-[#D1D5DB]"}`}
+                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            selectedTransaction === item.id
+                              ? "bg-[#0000CC]"
+                              : "bg-[#D1D5DB]"
+                          }`}
                         />
                         <span
-                          className={`text-sm font-medium ${selectedTransaction === item.id ? "text-[#0000CC]" : "text-[#0F172A]"}`}
+                          className={`text-sm font-medium ${
+                            selectedTransaction === item.id
+                              ? "text-[#0000CC]"
+                              : "text-[#0F172A]"
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                        {selectedTransaction === item.id && (
+                          <CheckCircle2 className="w-4 h-4 text-[#0000CC] ml-auto flex-shrink-0" />
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Cashier Dropdown */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2">
+                <Wallet className="w-4 h-4 text-[#0000CC]" />
+                <span
+                  className="text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  Cashier
+                </span>
+              </div>
+              <Select
+                value={selectedTransaction || undefined}
+                onValueChange={(value) =>
+                  handleTransactionSelect(value, "cashier")
+                }
+                onOpenChange={(open) => setIsPaused(open)}
+              >
+                <SelectTrigger
+                  className="w-full px-4 py-3 text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  <SelectValue
+                    placeholder={
+                      <span className="text-gray-400 text-sm">
+                        {CASHIER_TRANSACTIONS[cashierPlaceholderIndex]?.label}
+                      </span>
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                  {CASHIER_TRANSACTIONS.map((item) => (
+                    <SelectItem
+                      key={item.id}
+                      value={item.id}
+                      className="py-2.5 px-4 cursor-pointer focus:bg-[#F8FAFC]"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            selectedTransaction === item.id
+                              ? "bg-[#0000CC]"
+                              : "bg-[#D1D5DB]"
+                          }`}
+                        />
+                        <span
+                          className={`text-sm font-medium ${
+                            selectedTransaction === item.id
+                              ? "text-[#0000CC]"
+                              : "text-[#0F172A]"
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                        {selectedTransaction === item.id && (
+                          <CheckCircle2 className="w-4 h-4 text-[#0000CC] ml-auto flex-shrink-0" />
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Registrar Dropdown */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-center gap-2">
+                <FileText className="w-4 h-4 text-[#0000CC]" />
+                <span
+                  className="text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  Registrar
+                </span>
+              </div>
+              <Select
+                value={selectedTransaction || undefined}
+                onValueChange={(value) =>
+                  handleTransactionSelect(value, "registrar")
+                }
+                onOpenChange={(open) => setIsPaused(open)}
+              >
+                <SelectTrigger
+                  className="w-full px-4 py-3 text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-all"
+                  style={{ fontFamily: "var(--font-geist-sans)" }}
+                >
+                  <SelectValue
+                    placeholder={
+                      <span className="text-gray-400 text-sm">
+                        {
+                          REGISTRAR_TRANSACTIONS[registrarPlaceholderIndex]
+                            ?.label
+                        }
+                      </span>
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                  {REGISTRAR_TRANSACTIONS.map((item) => (
+                    <SelectItem
+                      key={item.id}
+                      value={item.id}
+                      className="py-2.5 px-4 cursor-pointer focus:bg-[#F8FAFC]"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            selectedTransaction === item.id
+                              ? "bg-[#0000CC]"
+                              : "bg-[#D1D5DB]"
+                          }`}
+                        />
+                        <span
+                          className={`text-sm font-medium ${
+                            selectedTransaction === item.id
+                              ? "text-[#0000CC]"
+                              : "text-[#0F172A]"
+                          }`}
                         >
                           {item.label}
                         </span>
@@ -454,15 +537,11 @@ export default function HeroSection({
           </div>
         </div>
 
-        {/* Stats — sits inside the mound, vertically centered within the 260px zone */}
+        {/* Stats */}
         <div
           ref={statsRef}
           className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-center"
-          style={{
-            height: "260px",
-            marginBottom: 0,
-            paddingBottom: 0,
-          }}
+          style={{ height: "260px", marginBottom: 0, paddingBottom: 0 }}
         >
           <div className="w-full max-w-2xl px-6 grid grid-cols-2 md:grid-cols-4 gap-6">
             {stats.map((stat, index) => (
@@ -503,12 +582,6 @@ export default function HeroSection({
             from { opacity: 0; transform: translateY(8px); }
             to   { opacity: 1; transform: translateY(0);   }
           }
-          @keyframes fadeInOut {
-            0%   { opacity: 0.3; }
-            20%  { opacity: 1;   }
-            80%  { opacity: 1;   }
-            100% { opacity: 0.3; }
-          }
           @keyframes floatNotif {
             0%   { transform: translateY(0px);  }
             100% { transform: translateY(-6px); }
@@ -524,8 +597,10 @@ export default function HeroSection({
         onClose={() => {
           setIsModalOpen(false);
           setSelectedTransaction(null);
+          setSelectedDepartment(null);
         }}
         initialTransaction={selectedTransaction}
+        department={selectedDepartment}
       />
     </>
   );

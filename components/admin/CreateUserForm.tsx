@@ -33,23 +33,34 @@ import {
   Shield,
   UserCheck,
   Send,
+  Building2,
 } from "lucide-react";
 import Link from "next/link";
 
-type StaffRole = "registrar" | "cashier";
+type StaffRole = "dean" | "registrar" | "cashier";
 
 const STAFF_ROLES = [
+  {
+    value: "dean" as StaffRole,
+    label: "Dean",
+    description:
+      "Handles academic concerns, grade appeals, and student discipline",
+    icon: Building2,
+    accessLevel: 4,
+  },
   {
     value: "registrar" as StaffRole,
     label: "Registrar",
     description: "Manages student records, enrollment, and academic documents",
     icon: GraduationCap,
+    accessLevel: 3,
   },
   {
     value: "cashier" as StaffRole,
     label: "Cashier",
     description: "Handles payments, assessments, and financial transactions",
     icon: Wallet,
+    accessLevel: 6,
   },
 ];
 
@@ -98,6 +109,7 @@ export function CreateUserForm() {
   const loadingCompleteRef = useRef(false);
 
   const roleLabels: Record<string, string> = {
+    dean: "Dean",
     registrar: "Registrar",
     cashier: "Cashier",
   };
@@ -176,6 +188,11 @@ export function CreateUserForm() {
     return Object.keys(newErrors).length === 0;
   };
 
+  const getAccessLevel = (role: StaffRole): number => {
+    const roleData = STAFF_ROLES.find((r) => r.value === role);
+    return roleData?.accessLevel || 6;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
@@ -190,8 +207,8 @@ export function CreateUserForm() {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
-        roleName: staffRole as "registrar" | "cashier",
-        roleAccessLevel: 6,
+        roleName: staffRole as StaffRole,
+        roleAccessLevel: getAccessLevel(staffRole as StaffRole),
         cashierWindow: staffRole === "cashier" ? cashierWindow : undefined,
       });
 
@@ -236,7 +253,7 @@ export function CreateUserForm() {
       `Staff ID: ${successData.staffId}`,
       `Name: ${successData.firstName} ${successData.lastName}`,
       `Email: ${successData.email}`,
-      `Role: ${roleLabels[successData.roleName]}`,
+      `Role: ${roleLabels[successData.roleName] || successData.roleName}`,
       `Faculty ID: ${successData.facultyId}`,
       `Password: Check email for temporary password`,
     ].join("\n");
@@ -264,7 +281,7 @@ export function CreateUserForm() {
               will be emailed automatically.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {STAFF_ROLES.map((role) => (
               <button
                 key={role.value}
@@ -488,7 +505,7 @@ export function CreateUserForm() {
             </p>
             <div className="flex items-center gap-3 flex-wrap">
               <Badge className="bg-[#1B5A8C] text-white capitalize">
-                {staffRole}
+                {roleLabels[staffRole] || staffRole}
               </Badge>
               {staffRole === "cashier" && cashierWindow && (
                 <Badge variant="secondary">Window {cashierWindow}</Badge>

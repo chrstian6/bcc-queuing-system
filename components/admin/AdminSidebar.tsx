@@ -52,7 +52,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
   const { update } = useSession();
 
   // Chrome variant per portal: admin (role 1), student (role 2),
-  // registrar (role 3), cashier (role 6, default)
+  // registrar (role 3), dean (role 4), cashier (role 6, default)
   const variant =
     user?.role === "1"
       ? "admin"
@@ -60,7 +60,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         ? "student"
         : user?.role === "3" || user?.staffRole === "registrar"
           ? "registrar"
-          : "cashier";
+          : user?.role === "4" || user?.staffRole === "dean"
+            ? "dean"
+            : "cashier";
 
   const roleDisplayName =
     variant === "admin"
@@ -69,7 +71,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         ? "Student"
         : variant === "registrar"
           ? "Registrar"
-          : "Cashier";
+          : variant === "dean"
+            ? "Dean"
+            : "Cashier";
 
   const homeUrl =
     variant === "admin"
@@ -78,7 +82,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         ? "/student/dashboard"
         : variant === "registrar"
           ? "/staff/registrar/dashboard"
-          : "/staff/cashier/dashboard";
+          : variant === "dean"
+            ? "/staff/dean/dashboard"
+            : "/staff/cashier/dashboard";
 
   const adminNavMain = [
     {
@@ -124,6 +130,37 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
+  const deanNavMain = [
+    {
+      title: "Dashboard",
+      url: "/staff/dean/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/staff/dean/dashboard",
+    },
+    {
+      title: "Queue",
+      url: "/staff/dean/queue",
+      icon: ListOrdered,
+      isActive: pathname.startsWith("/staff/dean/queue"),
+      items: [
+        { title: "Serve Tickets", url: "/staff/dean/queue" },
+        { title: "Queue History", url: "/staff/dean/queue?view=all" },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "/staff/dean/reports",
+      icon: ChartNoAxesCombined,
+      isActive: pathname.startsWith("/staff/dean/reports"),
+    },
+    {
+      title: "Settings",
+      url: "/staff/dean/settings",
+      icon: Settings,
+      isActive: pathname.startsWith("/staff/dean/settings"),
+    },
+  ];
+
   const cashierNavMain = [
     {
       title: "Dashboard",
@@ -137,9 +174,8 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       icon: ListOrdered,
       isActive: pathname.startsWith("/staff/cashier/queue"),
       items: [
-        { title: "Current Queue", url: "/staff/cashier/queue" },
-        { title: "Served Today", url: "/staff/cashier/queue?filter=served" },
-        { title: "All Tickets", url: "/staff/cashier/queue?filter=all" },
+        { title: "Serve Tickets", url: "/staff/cashier/queue" },
+        { title: "Queue History", url: "/staff/cashier/queue?view=all" },
       ],
     },
     {
@@ -258,6 +294,19 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       { name: "View Queue", url: "/admin/queue", icon: Play },
       { name: "Reports", url: "/admin/reports", icon: ChartNoAxesCombined },
     ],
+    dean: [
+      { name: "Serve Next", url: "/staff/dean/queue", icon: Play },
+      {
+        name: "Today's Report",
+        url: "/staff/dean/reports",
+        icon: ChartNoAxesCombined,
+      },
+      {
+        name: "All Tickets",
+        url: "/staff/dean/queue?view=all",
+        icon: ListOrdered,
+      },
+    ],
     cashier: [
       { name: "Serve Next", url: "/staff/cashier/queue", icon: Play },
       {
@@ -279,7 +328,11 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       },
     ],
     student: [
-      { name: "New Document Request", url: "/student/documents", icon: FileText },
+      {
+        name: "New Document Request",
+        url: "/student/documents",
+        icon: FileText,
+      },
       { name: "Live Queue", url: "/live-queue", icon: Play },
     ],
   } as const;
@@ -293,7 +346,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         ? studentNavMain
         : variant === "registrar"
           ? registrarNavMain
-          : cashierNavMain;
+          : variant === "dean"
+            ? deanNavMain
+            : cashierNavMain;
 
   const handleLogout = async () => {
     const result = await logoutAction();

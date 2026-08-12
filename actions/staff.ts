@@ -40,12 +40,12 @@ interface StaffResponse {
 /**
  * Generate a simple, easy-to-read temporary password
  * Format: word + number (e.g., "blue47", "happy23")
+ * Always at least 6 characters (4+ letter word + 2-digit number)
  */
 function generateSimplePassword(): string {
+  // Only use words with 4+ letters to ensure password is at least 6 chars
   const words = [
     "blue",
-    "red",
-    "green",
     "gold",
     "silver",
     "happy",
@@ -59,7 +59,6 @@ function generateSimplePassword(): string {
     "hill",
     "wind",
     "book",
-    "pen",
     "desk",
     "door",
     "bell",
@@ -72,17 +71,13 @@ function generateSimplePassword(): string {
     "dusk",
     "noon",
     "mist",
-    "dew",
     "rose",
     "lily",
     "pine",
-    "oak",
-    "elm",
     "lion",
     "deer",
     "hawk",
     "dove",
-    "fox",
   ];
 
   const word = words[Math.floor(Math.random() * words.length)];
@@ -150,7 +145,29 @@ export async function createStaffAccount(
       };
     }
 
+    // Generate temporary password (always 6+ characters)
     const tempPassword = generateSimplePassword();
+
+    // Set role access level based on role if not provided
+    let roleAccessLevel = data.roleAccessLevel || 6;
+    if (!data.roleAccessLevel) {
+      switch (data.roleName) {
+        case "dean":
+          roleAccessLevel = 4;
+          break;
+        case "registrar":
+          roleAccessLevel = 3;
+          break;
+        case "cashier":
+          roleAccessLevel = 6;
+          break;
+        case "dsdw":
+          roleAccessLevel = 5;
+          break;
+        default:
+          roleAccessLevel = 6;
+      }
+    }
 
     const staffData: any = {
       facultyId: data.facultyId,
@@ -159,7 +176,7 @@ export async function createStaffAccount(
       email: data.email.toLowerCase(),
       password: tempPassword,
       roleName: data.roleName,
-      roleAccessLevel: data.roleAccessLevel || 6,
+      roleAccessLevel: roleAccessLevel,
       status: "active",
       mustChangePassword: true,
     };
@@ -171,6 +188,7 @@ export async function createStaffAccount(
     const staff = new Staff(staffData);
     await staff.save();
 
+    // Try to send welcome email, but don't fail if it doesn't work
     try {
       await sendWelcomeEmail({
         email: staff.email,
@@ -181,6 +199,7 @@ export async function createStaffAccount(
       });
     } catch (emailError) {
       console.error("Failed to send welcome email:", emailError);
+      // Continue anyway - account is created
     }
 
     revalidatePath("/admin/users");
