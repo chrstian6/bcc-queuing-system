@@ -22,6 +22,7 @@ import {
   cancelTicket,
 } from "@/actions/ticket";
 import { getStaffDailyStats } from "@/actions/ticketNumberDistribution";
+import { filterTicketsByRole } from "@/lib/ticketUtils";
 
 interface ActiveQueueViewProps {
   department: string;
@@ -30,6 +31,7 @@ interface ActiveQueueViewProps {
 export function ActiveQueueView({ department }: ActiveQueueViewProps) {
   const router = useRouter();
   const [staffId, setStaffId] = useState<string | null>(null);
+  const [staffRole, setStaffRole] = useState<string>("");
   const [servingTicket, setServingTicket] = useState<any>(null);
   const [waitingTickets, setWaitingTickets] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -51,6 +53,8 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
       }
 
       const userStaffId = sessionResult.session.user?.staffId;
+      const userStaffRole = sessionResult.session.user?.staffRole || department;
+
       if (!userStaffId) {
         setLoadError("Staff ID not found. Please log in again.");
         setIsLoading(false);
@@ -58,19 +62,20 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
       }
 
       setStaffId(userStaffId);
+      setStaffRole(userStaffRole);
 
-      // Use getStaffQueueData instead of getStaffTickets
       const ticketsResult = await getStaffQueueData(userStaffId);
 
       if (ticketsResult && ticketsResult.success) {
-        const tickets = ticketsResult.tickets || [];
+        let tickets = ticketsResult.tickets || [];
 
-        // Find ticket being served by THIS staff member
+        // Filter tickets by role
+        tickets = filterTicketsByRole(tickets, userStaffRole);
+
         const serving = tickets.find(
           (t: any) => t.status === "serving" && t.servedBy === userStaffId,
         );
 
-        // Find pending tickets
         const waiting = tickets
           .filter((t: any) => t.status === "pending")
           .sort((a: any, b: any) => {
@@ -86,7 +91,6 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         setWaitingTickets([]);
       }
 
-      // Load staff stats (don't block if this fails)
       try {
         const statsResult = await getStaffDailyStats(userStaffId);
         if (statsResult?.success) {
@@ -94,7 +98,6 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         }
       } catch (statsError) {
         console.error("Error loading stats:", statsError);
-        // Non-critical, continue without stats
       }
     } catch (err) {
       console.error("Error loading queue:", err);
@@ -102,17 +105,13 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, [router, department]);
 
-  // Initial load and auto-refresh
   useEffect(() => {
     loadData();
-
-    // Auto-refresh every 15 seconds
     const interval = setInterval(() => {
       loadData();
     }, 15000);
-
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -121,14 +120,11 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
       setError("Staff ID not found. Please login again.");
       return;
     }
-
     setIsProcessing(true);
     setError("");
     setSuccess("");
-
     try {
       const result = await serveTicket(ticketNumber, staffId);
-
       if (result.success) {
         setSuccess(`Now serving ticket #${ticketNumber}`);
         await loadData();
@@ -145,17 +141,14 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
   const handleComplete = async () => {
     if (!servingTicket || !staffId) return;
-
     setIsProcessing(true);
     setError("");
     setSuccess("");
-
     try {
       const result = await completeServedTicket(
         servingTicket.ticketNumber,
         staffId,
       );
-
       if (result.success) {
         setSuccess(`Ticket #${servingTicket.ticketNumber} completed!`);
         await loadData();
@@ -172,14 +165,11 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
 
   const handleCancel = async () => {
     if (!servingTicket) return;
-
     setIsProcessing(true);
     setError("");
     setSuccess("");
-
     try {
       const result = await cancelTicket(servingTicket.ticketNumber);
-
       if (result.success) {
         setSuccess(`Ticket #${servingTicket.ticketNumber} cancelled`);
         await loadData();
@@ -231,13 +221,14 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
     );
   }
 
+  const roleLabel = staffRole === "dean" ? "Dean" : "Cashier";
+
   return (
     <div className="space-y-6">
-      {/* Header with Stats */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-900 font-['Plus_Jakarta_Sans']">
-            My Queue
+            {roleLabel} Queue
           </h2>
           <p className="text-gray-500 mt-1 font-['Plus_Jakarta_Sans']">
             {stats ? `${stats.ticketsServed || 0} served today` : ""}
@@ -255,9 +246,8 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         </button>
       </div>
 
-      {/* Messages */}
       {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
           <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
           <p className="text-sm text-green-700 font-['Plus_Jakarta_Sans']">
             {success}
@@ -265,7 +255,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         </div>
       )}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
           <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-sm text-red-700 font-['Plus_Jakarta_Sans']">
             {error}
@@ -273,16 +263,14 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         </div>
       )}
 
-      {/* Now Serving Section */}
       {servingTicket ? (
-        <div className="bg-gradient-to-br from-[#1B5A8C] to-[#0B3B5F] rounded-xl p-6 text-white animate-in fade-in duration-300">
+        <div className="bg-gradient-to-br from-[#1B5A8C] to-[#0B3B5F] rounded-xl p-6 text-white">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             <h3 className="text-sm font-semibold uppercase tracking-wider text-white/80 font-['Plus_Jakarta_Sans']">
               Now Serving
             </h3>
           </div>
-
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm flex-shrink-0">
@@ -308,7 +296,6 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                 </p>
               </div>
             </div>
-
             <div className="flex gap-2 flex-shrink-0">
               <button
                 onClick={handleComplete}
@@ -345,7 +332,6 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
         </div>
       )}
 
-      {/* Waiting Queue Section */}
       <div>
         <div className="flex items-center gap-2 mb-4">
           <Clock className="w-4 h-4 text-yellow-600" />
@@ -362,7 +348,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                 No waiting tickets
               </p>
               <p className="text-sm text-gray-400 mt-1 font-['Plus_Jakarta_Sans']">
-                New tickets for this department will appear here
+                New {roleLabel.toLowerCase()} tickets will appear here
               </p>
             </div>
           ) : (
@@ -374,14 +360,11 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4 flex-1 min-w-0">
-                      {/* Queue Position */}
                       <div className="w-10 h-10 bg-[#1B5A8C]/10 rounded-full flex items-center justify-center flex-shrink-0">
                         <span className="text-sm font-bold text-[#1B5A8C] font-['Plus_Jakarta_Sans']">
                           #{ticket.ticketNumber}
                         </span>
                       </div>
-
-                      {/* Ticket Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold text-gray-900 font-['Plus_Jakarta_Sans']">
@@ -413,10 +396,7 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                               <span className="font-['Plus_Jakarta_Sans']">
                                 {new Date(ticket.createdAt).toLocaleTimeString(
                                   [],
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  },
+                                  { hour: "2-digit", minute: "2-digit" },
                                 )}
                               </span>
                             </div>
@@ -424,8 +404,6 @@ export function ActiveQueueView({ department }: ActiveQueueViewProps) {
                         </div>
                       </div>
                     </div>
-
-                    {/* Serve Button */}
                     <button
                       onClick={() => handleServeNext(ticket.ticketNumber)}
                       disabled={isProcessing || !!servingTicket}

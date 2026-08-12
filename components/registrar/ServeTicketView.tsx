@@ -26,6 +26,7 @@ import {
   notifySkipped,
 } from "@/actions/ticket-notification";
 import { cancelPreviousDayTickets } from "@/actions/ticket-cleanup";
+import { filterTicketsByRole } from "@/lib/ticketUtils";
 
 interface Student {
   firstName?: string;
@@ -48,6 +49,7 @@ interface Ticket {
 
 interface SessionUser {
   staffId?: string;
+  staffRole?: string;
   name?: string;
   [key: string]: unknown;
 }
@@ -175,13 +177,19 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
         const sessionUser = sessionResult.session.user as SessionUser;
         setUser(sessionUser);
         const staffId = sessionUser?.staffId;
+        const staffRole = sessionUser?.staffRole || department;
+
         if (!staffId) {
           setIsLoading(false);
           return;
         }
+
         const ticketsResult = await getStaffQueueData(staffId);
         if (ticketsResult?.success) {
-          const tickets: Ticket[] = ticketsResult.tickets;
+          // Filter tickets by role (dean sees only dean tickets, cashier sees only cashier tickets)
+          let tickets: Ticket[] = ticketsResult.tickets;
+          tickets = filterTicketsByRole(tickets, staffRole);
+
           const serving =
             tickets.find(
               (t) => t.status === "serving" && t.servedBy === staffId,
@@ -245,7 +253,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
         setIsLoading(false);
       }
     },
-    [router],
+    [router, department],
   );
 
   useEffect(() => {
@@ -301,7 +309,10 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     const ticketsResult = await getStaffQueueData(user.staffId);
     if (!ticketsResult?.success) return;
 
-    const tickets: Ticket[] = ticketsResult.tickets;
+    let tickets: Ticket[] = ticketsResult.tickets;
+    // Filter by role
+    tickets = filterTicketsByRole(tickets, user.staffRole || department);
+
     const waiting = tickets
       .filter((t) => t.status === "pending")
       .sort((a, b) => {

@@ -1,89 +1,103 @@
 // lib/ticketUtils.ts
 
-/**
- * Get the department for a given transaction type
- */
-export function getDepartmentForTransaction(transactionType: string): string {
-  // All transaction types go to cashier
-  const cashierTransactions = [
-    "tuition-payment",
-    "miscellaneous-fee",
-    "document-payment",
-    "other-school-fees",
-    "assessment",
-  ];
+// ─── Dean transaction types ──────────────────────────────────────────────────
 
-  if (cashierTransactions.includes(transactionType)) {
-    return "cashier";
-  }
+export const DEAN_TRANSACTION_TYPES = [
+  "grade-appeal",
+  "academic-concern",
+  "course-approval",
+  "student-discipline",
+  "faculty-concern",
+  "curriculum-review",
+  "academic-advisory",
+  "other-dean-request",
+];
 
-  return "general";
-}
+// ─── Cashier transaction types ───────────────────────────────────────────────
 
-/**
- * Get human-readable label for transaction type
- */
+export const CASHIER_TRANSACTION_TYPES = [
+  "tuition-payment",
+  "miscellaneous-fee",
+  "document-payment",
+  "other-school-fees",
+  "assessment",
+];
+
+// ─── Transaction display labels ──────────────────────────────────────────────
+
+const TRANSACTION_LABELS: Record<string, string> = {
+  // Dean transactions
+  "grade-appeal": "Grade Appeal",
+  "academic-concern": "Academic Concern",
+  "course-approval": "Course Approval",
+  "student-discipline": "Student Discipline",
+  "faculty-concern": "Faculty Concern",
+  "curriculum-review": "Curriculum Review",
+  "academic-advisory": "Academic Advisory",
+  "other-dean-request": "Other Request",
+  // Cashier transactions
+  "tuition-payment": "Tuition Payment",
+  "miscellaneous-fee": "Miscellaneous Fee",
+  "document-payment": "Document Payment",
+  "other-school-fees": "Other School Fees",
+  assessment: "Assessment",
+};
+
+// ─── Label helpers ───────────────────────────────────────────────────────────
+
 export function getTransactionLabel(
   type: string,
   description?: string,
 ): string {
-  const labels: Record<string, string> = {
-    "tuition-payment": "Tuition Payment",
-    "miscellaneous-fee": "Miscellaneous Fee Payment",
-    "document-payment": "Document Payment",
-    "other-school-fees": "Other School Fees",
-    assessment: "Assessment",
-  };
+  if (TRANSACTION_LABELS[type]) {
+    return TRANSACTION_LABELS[type];
+  }
+  return (
+    type?.replace(/-/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()) ||
+    "Unknown"
+  );
+}
 
-  const baseLabel = labels[type] || type.replace(/-/g, " ");
+export function getTransactionShortLabel(type: string): string {
+  return (
+    type?.replace(/-/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()) ||
+    "Unknown"
+  );
+}
 
-  // Append description for types that need it
-  if (
-    description &&
-    ["other-school-fees", "miscellaneous-fee"].includes(type)
-  ) {
-    return `${baseLabel} - ${description}`;
+// ─── Role-based filtering ────────────────────────────────────────────────────
+
+export function filterTicketsByRole(tickets: any[], role: string): any[] {
+  if (!tickets || tickets.length === 0) return [];
+
+  if (role === "dean") {
+    return tickets.filter((ticket) =>
+      DEAN_TRANSACTION_TYPES.includes(ticket.transactionType),
+    );
   }
 
-  return baseLabel;
+  if (role === "cashier") {
+    return tickets.filter((ticket) =>
+      CASHIER_TRANSACTION_TYPES.includes(ticket.transactionType),
+    );
+  }
+
+  // Return all tickets for unknown roles
+  return tickets;
 }
 
-/**
- * Check if a transaction type requires a description
- */
-export function requiresDescription(transactionType: string): boolean {
-  return ["other-school-fees", "miscellaneous-fee"].includes(transactionType);
+// ─── Transaction type checks ─────────────────────────────────────────────────
+
+export function isDeanTransaction(transactionType: string): boolean {
+  return DEAN_TRANSACTION_TYPES.includes(transactionType);
 }
 
-/**
- * Get all valid cashier transaction types
- */
-export function getCashierTransactionTypes(): Array<{
-  value: string;
-  label: string;
-  requiresDescription: boolean;
-}> {
-  return [
-    {
-      value: "tuition-payment",
-      label: "Tuition Payment",
-      requiresDescription: false,
-    },
-    {
-      value: "miscellaneous-fee",
-      label: "Miscellaneous Fee Payment",
-      requiresDescription: true,
-    },
-    {
-      value: "document-payment",
-      label: "Document Payment",
-      requiresDescription: false,
-    },
-    {
-      value: "other-school-fees",
-      label: "Other School Fees",
-      requiresDescription: true,
-    },
-    { value: "assessment", label: "Assessment", requiresDescription: false },
-  ];
+export function isCashierTransaction(transactionType: string): boolean {
+  return CASHIER_TRANSACTION_TYPES.includes(transactionType);
+}
+
+export function getTransactionRole(transactionType: string): string {
+  if (isDeanTransaction(transactionType)) return "dean";
+  if (isCashierTransaction(transactionType)) return "cashier";
+  return "unknown";
 }

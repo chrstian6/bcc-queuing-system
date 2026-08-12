@@ -21,6 +21,12 @@ export const authConfig: NextAuthConfig = {
           token.staffRole = user.staffRole;
           token.cashierWindow = user.cashierWindow;
           token.mustChangePassword = user.mustChangePassword;
+
+          console.log("🔐 JWT callback - Staff fields set:", {
+            role: user.role,
+            staffId: user.staffId,
+            staffRole: user.staffRole,
+          });
         }
 
         // Student-specific fields
@@ -45,6 +51,12 @@ export const authConfig: NextAuthConfig = {
           session.user.staffRole = token.staffRole as string;
           session.user.cashierWindow = token.cashierWindow as string;
           session.user.mustChangePassword = token.mustChangePassword as boolean;
+
+          console.log("📋 Session callback - Staff session created:", {
+            role: session.user.role,
+            staffId: session.user.staffId,
+            staffRole: session.user.staffRole,
+          });
         }
 
         // Student-specific fields

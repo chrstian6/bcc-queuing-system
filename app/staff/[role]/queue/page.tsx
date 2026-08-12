@@ -1,9 +1,8 @@
 // app/staff/[role]/queue/page.tsx
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { Ticket, ListChecks } from "lucide-react";
 import { ServeTicketView } from "@/components/registrar/ServeTicketView";
 import { AllTicketsView } from "@/components/registrar/AllTicketsView";
@@ -18,14 +17,14 @@ function QueueContent() {
   const role = params.role as string;
   const [currentView, setCurrentView] = useState<QueueView>("serve");
 
-  // The ticket queue is cashier-only; registrar uses /requests instead
+  // Only cashier and dean can access queue
   useEffect(() => {
-    if (role !== "cashier") {
+    if (role !== "cashier" && role !== "dean") {
       router.replace(`/staff/${role}/dashboard`);
     }
   }, [role, router]);
 
-  if (role !== "cashier") return null;
+  if (role !== "cashier" && role !== "dean") return null;
 
   const tabs = [
     { id: "serve" as const, label: "Serve", icon: Ticket },
@@ -53,7 +52,7 @@ function QueueContent() {
         ))}
       </div>
 
-      {/* Dynamic View */}
+      {/* Dynamic View - department prop tells components which tickets to show */}
       {currentView === "serve" && <ServeTicketView department={role} />}
       {currentView === "all" && <AllTicketsView department={role} />}
     </div>
@@ -63,15 +62,11 @@ function QueueContent() {
 function QueueSkeleton() {
   return (
     <div className="space-y-5 animate-pulse">
-      {/* Tabs Skeleton */}
       <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5 h-10">
         <div className="flex-1 bg-white rounded-md shadow-sm" />
         <div className="flex-1" />
       </div>
-
-      {/* Serve View Skeleton */}
       <div>
-        {/* Top Bar */}
         <div className="flex items-center justify-between pb-3 mb-1">
           <div className="flex items-center gap-3">
             <div className="h-5 w-20 bg-gray-100 rounded-full" />
@@ -79,10 +74,7 @@ function QueueSkeleton() {
           </div>
           <div className="h-5 w-14 bg-gray-100 rounded-full" />
         </div>
-
-        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-5 lg:divide-x divide-gray-100">
-          {/* Now Serving */}
           <div className="lg:col-span-3 py-6 lg:pr-8">
             <div className="h-3 w-20 bg-gray-100 rounded-full mb-4" />
             <div className="space-y-6">
@@ -102,8 +94,6 @@ function QueueSkeleton() {
                 ))}
               </div>
             </div>
-
-            {/* Controls */}
             <div className="flex items-center gap-2 pt-5 mt-6 border-t border-gray-100">
               <div className="h-8 w-16 bg-gray-100 rounded-full" />
               <div className="flex-1" />
@@ -112,8 +102,6 @@ function QueueSkeleton() {
               <div className="h-8 w-16 bg-gray-100 rounded-full" />
             </div>
           </div>
-
-          {/* Queue */}
           <div className="lg:col-span-2 py-6 lg:pl-8">
             <div className="h-3 w-12 bg-gray-100 rounded-full mb-5" />
             <div className="space-y-3">

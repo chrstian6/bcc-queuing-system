@@ -14,21 +14,32 @@ export default async function StaffRoleLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/?error=unauthorized");
-  // Portals exist for cashier ("6") and registrar ("3"); dean/dsdw stay blocked
-  if (!["3", "6"].includes(session.user.role || "")) {
+
+  // Portals exist for cashier ("6"), registrar ("3"), and dean ("4")
+  const staffRoles = ["3", "4", "6"];
+  if (!staffRoles.includes(session.user.role || "")) {
     redirect("/?error=forbidden");
   }
+
   if (session.user.mustChangePassword) redirect("/change-password");
 
   const { role } = await params;
-  const ownRole = session.user.role === "3" ? "registrar" : "cashier";
+
+  // Map role numbers to role names
+  const roleMap: Record<string, string> = {
+    "3": "registrar",
+    "4": "dean",
+    "6": "cashier",
+  };
+  const ownRole = roleMap[session.user.role || ""] || "cashier";
+
   if (role !== ownRole) redirect(`/staff/${ownRole}/dashboard`);
 
   const user = {
     name: session.user.name || "Staff",
     email: session.user.email || "",
     role: session.user.role || "",
-    staffRole: session.user.staffRole || "cashier",
+    staffRole: session.user.staffRole || ownRole,
     staffId: session.user.staffId || "",
     facultyId: session.user.facultyId || "",
   };

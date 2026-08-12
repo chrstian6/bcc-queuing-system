@@ -10,7 +10,7 @@ export default function LiveQueueSection() {
   const { departments, isConnected, lastUpdated } = useRealtimeQueue();
 
   const visibleDepartments = departments.filter(
-    (dept) => dept.department === "registrar" || dept.department === "cashier",
+    (dept) => dept.department === "dean" || dept.department === "cashier",
   );
 
   const formatTime = (date: Date | null) => {
@@ -61,7 +61,7 @@ export default function LiveQueueSection() {
           )}
         </div>
 
-        {/* Always visible grid */}
+        {/* Always visible grid - Dean and Cashier only */}
         <div className="grid grid-cols-1 md:grid-cols-2">
           {visibleDepartments.length > 0 ? (
             visibleDepartments.map((dept) => (
@@ -130,7 +130,7 @@ export default function LiveQueueSection() {
               </div>
             ))
           ) : (
-            // Fallback: always show Registrar and Cashier even without data
+            // Fallback: always show Dean and Cashier even without data
             <>
               <div className="border-r border-b border-gray-100">
                 <div className="px-6 md:px-10 py-6">
@@ -138,7 +138,7 @@ export default function LiveQueueSection() {
                     className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-5"
                     style={FONT}
                   >
-                    Registrar
+                    Dean's Office
                   </h3>
                   <div className="flex items-center gap-10">
                     <div className="flex items-center gap-4">

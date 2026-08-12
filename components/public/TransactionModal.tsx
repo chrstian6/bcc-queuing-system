@@ -30,6 +30,7 @@ interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialTransaction?: string | null;
+  department?: string | null;
 }
 
 interface StudentInfo {
@@ -55,13 +56,54 @@ interface GuardianInfo {
 
 const SUFFIXES = ["", "Jr.", "Sr.", "II", "III", "IV", "V"];
 
-const transactions = [
-  { id: "tuition-payment", label: "Tuition Payment" },
-  { id: "miscellaneous-fee", label: "Miscellaneous Fee Payment" },
-  { id: "document-payment", label: "Document Payment" },
-  { id: "other-school-fees", label: "Other School Fees" },
-  { id: "assessment", label: "Assessment" },
-];
+const ALL_TRANSACTIONS: Record<string, { label: string; department: string }> =
+  {
+    // Dean
+    "grade-appeal": { label: "Grade Appeal", department: "dean" },
+    "academic-concern": { label: "Academic Concern", department: "dean" },
+    "course-approval": { label: "Course Approval", department: "dean" },
+    "student-discipline": { label: "Student Discipline", department: "dean" },
+    "faculty-concern": { label: "Faculty Concern", department: "dean" },
+    "curriculum-review": { label: "Curriculum Review", department: "dean" },
+    "academic-advisory": { label: "Academic Advisory", department: "dean" },
+    // Cashier
+    "tuition-payment": { label: "Tuition Payment", department: "cashier" },
+    "miscellaneous-fee": {
+      label: "Miscellaneous Fee Payment",
+      department: "cashier",
+    },
+    "document-payment": { label: "Document Payment", department: "cashier" },
+    "other-school-fees": { label: "Other School Fees", department: "cashier" },
+    assessment: { label: "Assessment", department: "cashier" },
+    // Registrar
+    "certificate-enrollment": {
+      label: "Certificate of Enrollment",
+      department: "registrar",
+    },
+    "transcript-records": {
+      label: "Transcript of Records",
+      department: "registrar",
+    },
+    "request-grades": { label: "Request for Grades", department: "registrar" },
+    "request-assessment": {
+      label: "Request for Assessment",
+      department: "registrar",
+    },
+    "good-moral": { label: "Good Moral Certificate", department: "registrar" },
+    diploma: { label: "Diploma", department: "registrar" },
+    "other-document": {
+      label: "Other Document Request",
+      department: "registrar",
+    },
+  };
+
+function getTransactionLabel(type: string): string {
+  return (
+    ALL_TRANSACTIONS[type]?.label ||
+    type?.replace(/-/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()) ||
+    "Unknown"
+  );
+}
 
 function sanitizeInput(input: string): string {
   return input
@@ -145,7 +187,6 @@ function Field({
   );
 }
 
-// Auto-close countdown component
 function AutoCloseCountdown({ onClose }: { onClose: () => void }) {
   const [countdown, setCountdown] = useState(30);
 
@@ -154,11 +195,9 @@ function AutoCloseCountdown({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
-
     const timer = setInterval(() => {
       setCountdown((prev) => prev - 1);
     }, 1000);
-
     return () => clearInterval(timer);
   }, [countdown, onClose]);
 
@@ -176,6 +215,7 @@ export default function TransactionModal({
   isOpen,
   onClose,
   initialTransaction,
+  department,
 }: TransactionModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedTransaction, setSelectedTransaction] = useState<string | null>(
@@ -219,8 +259,6 @@ export default function TransactionModal({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Check queue availability when the modal opens; submission still
-  // re-validates server-side.
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -421,14 +459,17 @@ export default function TransactionModal({
           "Enter a valid 11-digit PH number (09XX XXX XXXX)";
     }
 
-    const rawAmount = amount.replace(/,/g, "");
-    if (!rawAmount.trim()) newErrors.amount = "Amount is required";
-    else if (!/^\d+(\.\d{1,2})?$/.test(rawAmount))
-      newErrors.amount = "Enter a valid amount";
-    else if (parseFloat(rawAmount) <= 0)
-      newErrors.amount = "Amount must be greater than 0";
-    else if (rawAmount.split(".")[0].length > 12)
-      newErrors.amount = "Amount cannot exceed 12 digits";
+    // Amount only required for cashier
+    if (department === "cashier") {
+      const rawAmount = amount.replace(/,/g, "");
+      if (!rawAmount.trim()) newErrors.amount = "Amount is required";
+      else if (!/^\d+(\.\d{1,2})?$/.test(rawAmount))
+        newErrors.amount = "Enter a valid amount";
+      else if (parseFloat(rawAmount) <= 0)
+        newErrors.amount = "Amount must be greater than 0";
+      else if (rawAmount.split(".")[0].length > 12)
+        newErrors.amount = "Amount cannot exceed 12 digits";
+    }
 
     if (specifyTransaction.trim() && specifyTransaction.length > 200)
       newErrors.specifyTransaction =
@@ -457,10 +498,16 @@ export default function TransactionModal({
     try {
       const idempotencyKey = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
+      // Always provide a number for amount (0 for non-cashier)
+      const ticketAmount =
+        department === "cashier"
+          ? parseFloat(amount.replace(/,/g, "") || "0")
+          : 0;
+
       const result = await createTicket({
         transactionType: selectedTransaction!,
         transactionDescription: specifyTransaction.trim() || undefined,
-        amount: parseFloat(amount.replace(/,/g, "")),
+        amount: ticketAmount,
         student: {
           schoolId: studentInfo.schoolId.trim() || "",
           firstName: sanitizeInput(studentInfo.firstName),
@@ -514,8 +561,7 @@ export default function TransactionModal({
   };
 
   const selectedLabel = selectedTransaction
-    ? (transactions.find((t) => t.id === selectedTransaction)?.label ??
-      selectedTransaction)
+    ? getTransactionLabel(selectedTransaction)
     : "";
   const hasEmail = isGuardian
     ? !!guardianInfo.email.trim()
@@ -797,25 +843,28 @@ export default function TransactionModal({
                     </Field>
                   </div>
 
-                  <Field
-                    label="Amount to Pay (₱)"
-                    required
-                    error={errors.amount}
-                  >
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B] text-[14px] font-medium">
-                        ₱
-                      </span>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={amount}
-                        onChange={handleAmountChange}
-                        placeholder="0.00"
-                        className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] h-11 pl-8 text-[15px] font-medium"
-                      />
-                    </div>
-                  </Field>
+                  {/* Amount - only for cashier */}
+                  {department === "cashier" && (
+                    <Field
+                      label="Amount to Pay (₱)"
+                      required
+                      error={errors.amount}
+                    >
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B] text-[14px] font-medium">
+                          ₱
+                        </span>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={amount}
+                          onChange={handleAmountChange}
+                          placeholder="0.00"
+                          className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] h-11 pl-8 text-[15px] font-medium"
+                        />
+                      </div>
+                    </Field>
+                  )}
 
                   {selectedTransaction === "other-school-fees" && (
                     <Field
@@ -1056,8 +1105,7 @@ export default function TransactionModal({
                   <CheckCircle2 className="w-7 h-7 text-[#0000CC]" />
                 </div>
 
-                {/* Amount Display */}
-                {amount && (
+                {amount && department === "cashier" && (
                   <div className="mb-4">
                     <p
                       className="text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wide mb-1"
@@ -1080,7 +1128,6 @@ export default function TransactionModal({
                   </div>
                 )}
 
-                {/* Ticket Number */}
                 <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4">
                   <div className="bg-[#0000CC] px-6 py-2">
                     <p
@@ -1100,7 +1147,6 @@ export default function TransactionModal({
                   </div>
                 </div>
 
-                {/* Contact Information */}
                 <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 mb-4">
                   <p
                     className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wide mb-2"
@@ -1160,7 +1206,6 @@ export default function TransactionModal({
                   </div>
                 </div>
 
-                {/* Notification Info */}
                 <div className="bg-[#F0F0FF] border border-[#0000CC]/10 rounded-xl p-4 mb-4">
                   <p
                     className="text-[13px] text-[#475569] leading-relaxed"
@@ -1175,7 +1220,6 @@ export default function TransactionModal({
                   </p>
                 </div>
 
-                {/* Auto-close countdown */}
                 <AutoCloseCountdown onClose={handleClose} />
 
                 <div className="flex gap-3">
