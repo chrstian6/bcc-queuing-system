@@ -17,12 +17,14 @@ import { checkRateLimit } from "@/lib/ratelimits";
 import { withIdempotency, IdempotencyConflictError } from "@/lib/idempotency";
 import { getAppDayRange } from "@/lib/time";
 import { sendDocumentRequestEmail } from "@/lib/email";
+import { sendDocumentRequestSMS } from "@/lib/sms";
 import {
   createDocumentRequestSchema,
   DOCUMENT_TYPE_LABELS,
   MAX_ACTIVE_REQUESTS,
   type DocumentType,
 } from "@/types/documentRequest";
+import type { TorFormData } from "@/components/public/TranscriptOfRecordsForm";
 
 const ACTIVE_STATUSES = ["pending", "processing", "ready-for-pickup"];
 
@@ -43,6 +45,9 @@ function revalidateDocumentPaths() {
   revalidatePath("/staff/registrar/dashboard");
 }
 
+/**
+ * Create a document request (requires student session)
+ */
 export async function createDocumentRequest(data: {
   documentType: string;
   otherDescription?: string;
@@ -106,7 +111,7 @@ export async function createDocumentRequest(data: {
       return { success: false, error: STALE_SESSION_ERROR };
     }
 
-    return await withIdempotency<DocumentRequestResponse>(
+    const result = await withIdempotency<DocumentRequestResponse>(
       `docRequest:${session.user.id}:${data.idempotencyKey}`,
       async () => {
         const { start: today, dateStr } = getAppDayRange();
@@ -143,24 +148,43 @@ export async function createDocumentRequest(data: {
 
         await request.save();
 
+        const studentName =
+          `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        const documentTypeLabel =
+          DOCUMENT_TYPE_LABELS[input.documentType as DocumentType];
+
+        // Send email notification
         sendDocumentRequestEmail({
           email: user.email,
-          studentName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          studentName,
           requestId,
-          documentTypeLabel:
-            DOCUMENT_TYPE_LABELS[input.documentType as DocumentType],
+          documentTypeLabel,
           copies: input.copies,
           purpose: input.purpose,
           notificationType: "submitted",
-        }).catch((err) =>
-          console.error("Document request email failed:", err),
-        );
+        }).catch((err) => console.error("Document request email failed:", err));
+
+        // Send SMS notification
+        if (user.contactNumber) {
+          console.log("SMS: Sending submission SMS to:", user.contactNumber);
+          sendDocumentRequestSMS(
+            user.contactNumber,
+            studentName,
+            requestId,
+            documentTypeLabel,
+            "submitted",
+          ).catch((err) => console.error("Document request SMS failed:", err));
+        } else {
+          console.log("SMS: No contact number for user:", user.email);
+        }
 
         revalidateDocumentPaths();
 
         return { success: true, request: serialize(request.toObject()) };
       },
     );
+
+    return result;
   } catch (error: any) {
     if (error instanceof IdempotencyConflictError) {
       return {
@@ -180,6 +204,150 @@ export async function createDocumentRequest(data: {
   }
 }
 
+/**
+ * Create a public TOR request (no session required - for landing page)
+ */
+export async function createPublicTorRequest(
+  torData: TorFormData,
+  idempotencyKey: string,
+): Promise<DocumentRequestResponse> {
+  try {
+    if (!idempotencyKey) {
+      return { success: false, error: "Missing request identifier" };
+    }
+
+    // Build purpose string from TOR data
+    const purposes: string[] = [];
+    if (torData.purpose.employment) {
+      purposes.push(`Employment (${torData.purpose.employmentScope})`);
+    }
+    if (torData.purpose.cavChed) {
+      purposes.push(`CAV-CHED (${torData.purpose.cavScope})`);
+    }
+    if (torData.purpose.boardExam) {
+      const examType =
+        torData.purpose.boardExamType === "other"
+          ? `Other: ${torData.purpose.boardExamOther}`
+          : torData.purpose.boardExamType.toUpperCase();
+      purposes.push(`Board Exam (${examType})`);
+    }
+    const purposeString = purposes.join(", ") || "Transcript of Records";
+
+    await connectDB();
+
+    const result = await withIdempotency<DocumentRequestResponse>(
+      `publicTorRequest:${idempotencyKey}`,
+      async () => {
+        const { start: today, dateStr } = getAppDayRange();
+
+        const counter = await Counter.findOneAndUpdate(
+          { _id: `DOCREQ-${dateStr}` },
+          { $inc: { seq: 1 }, $setOnInsert: { date: today } },
+          { upsert: true, returnDocument: "after" },
+        );
+        const requestId = `DR-${dateStr}-${String(counter?.seq || 1).padStart(4, "0")}`;
+
+        const request = new DocumentRequest({
+          requestId,
+          userId: "public",
+          student: {
+            schoolId: "",
+            firstName: torData.student.firstName,
+            lastName: torData.student.lastName,
+            middleName: torData.student.middleName || "",
+            suffix: "",
+            year: "",
+            campus: "",
+            email: "",
+            contactNumber: torData.student.contactNo || "",
+          },
+          documentType: "transcript-records",
+          otherDescription: "",
+          purpose: purposeString,
+          copies: 1,
+          torDetails: {
+            purpose: {
+              employment: torData.purpose.employment,
+              employmentScope: torData.purpose.employmentScope,
+              cavChed: torData.purpose.cavChed,
+              cavScope: torData.purpose.cavScope,
+              boardExam: torData.purpose.boardExam,
+              boardExamType: torData.purpose.boardExamType,
+              boardExamOther: torData.purpose.boardExamOther,
+            },
+            student: {
+              lastName: torData.student.lastName,
+              firstName: torData.student.firstName,
+              middleName: torData.student.middleName,
+              birthdate: torData.student.birthdate,
+              birthplace: torData.student.birthplace,
+              gender: torData.student.gender,
+              address: torData.student.address,
+              contactNo: torData.student.contactNo,
+            },
+            academic: {
+              course: torData.academic.course,
+              major: torData.academic.major,
+              yearGraduated: torData.academic.yearGraduated,
+              notGraduated: torData.academic.notGraduated,
+              semester: torData.academic.semester,
+              schoolYear: torData.academic.schoolYear,
+            },
+            fee: torData.fee,
+          },
+          status: "pending",
+        });
+
+        await request.save();
+
+        // Send SMS notification for public TOR request
+        if (torData.student.contactNo) {
+          const studentName =
+            `${torData.student.firstName} ${torData.student.lastName}`.trim();
+          console.log(
+            "SMS: Sending TOR submission SMS to:",
+            torData.student.contactNo,
+          );
+          sendDocumentRequestSMS(
+            torData.student.contactNo,
+            studentName,
+            requestId,
+            "Transcript of Records",
+            "submitted",
+          ).catch((err) => console.error("TOR request SMS failed:", err));
+        } else {
+          console.log("SMS: No contact number provided in TOR form");
+        }
+
+        revalidateDocumentPaths();
+
+        return { success: true, request: serialize(request.toObject()) };
+      },
+    );
+
+    return result;
+  } catch (error: any) {
+    if (error instanceof IdempotencyConflictError) {
+      return {
+        success: false,
+        error: "Your request is still being processed. Please wait a moment.",
+      };
+    }
+    console.error("Error creating public TOR request:", error);
+    if (error?.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((e: any) => e.message);
+      return { success: false, error: messages.join(", ") };
+    }
+    return {
+      success: false,
+      error: "Failed to submit TOR request. Please try again.",
+    };
+  }
+}
+
+/**
+ * Get my document requests (requires student session)
+ */
 export async function getMyDocumentRequests() {
   try {
     const session = await requireStudent();
@@ -198,6 +366,9 @@ export async function getMyDocumentRequests() {
   }
 }
 
+/**
+ * Get registrar requests (requires admin or registrar role)
+ */
 export async function getRegistrarRequests(filters?: {
   status?: string;
   search?: string;
@@ -234,6 +405,9 @@ export async function getRegistrarRequests(filters?: {
   }
 }
 
+/**
+ * Get registrar request stats (requires admin or registrar role)
+ */
 export async function getRegistrarRequestStats() {
   try {
     const session = await requireRole(ROLES.ADMIN, ROLES.REGISTRAR);
@@ -260,7 +434,14 @@ export async function getRegistrarRequestStats() {
 
     return {
       success: true,
-      stats: { pending, processing, ready, releasedToday, rejectedToday, total },
+      stats: {
+        pending,
+        processing,
+        ready,
+        releasedToday,
+        rejectedToday,
+        total,
+      },
     };
   } catch (error) {
     console.error("Error fetching registrar stats:", error);
@@ -276,11 +457,27 @@ const TRANSITIONS: Record<
   { from: string[]; to: string; dateField?: string }
 > = {
   "start-processing": { from: ["pending"], to: "processing" },
-  "mark-ready": { from: ["processing"], to: "ready-for-pickup", dateField: "readyAt" },
-  release: { from: ["ready-for-pickup"], to: "released", dateField: "releasedAt" },
-  reject: { from: ["pending", "processing"], to: "rejected", dateField: "rejectedAt" },
+  "mark-ready": {
+    from: ["processing"],
+    to: "ready-for-pickup",
+    dateField: "readyAt",
+  },
+  release: {
+    from: ["ready-for-pickup"],
+    to: "released",
+    dateField: "releasedAt",
+  },
+  reject: {
+    from: ["pending", "processing"],
+    to: "rejected",
+    dateField: "rejectedAt",
+  },
 };
 
+/**
+ * Process document request (requires admin or registrar role)
+ * Sends SMS notification to the student's contact number
+ */
 export async function processDocumentRequest(
   requestId: string,
   action: ProcessAction,
@@ -301,43 +498,64 @@ export async function processDocumentRequest(
       };
     }
     if (trimmedRemarks.length > 500) {
-      return { success: false, error: "Remarks must be 500 characters or less" };
+      return {
+        success: false,
+        error: "Remarks must be 500 characters or less",
+      };
     }
 
     const changedBy =
-      session.user.staffId || (session.user.role === ROLES.ADMIN ? "admin" : "staff");
+      session.user.staffId ||
+      (session.user.role === ROLES.ADMIN ? "admin" : "staff");
 
     await connectDB();
 
-    // Status-guarded pipeline update (atomic; also appends history)
-    const updated = await DocumentRequest.findOneAndUpdate(
-      { requestId, status: { $in: transition.from } },
-      [
+    // First check if the request exists
+    const existingDoc = await DocumentRequest.findOne({ requestId }).lean();
+
+    if (!existingDoc) {
+      return {
+        success: false,
+        error: "Request not found",
+      };
+    }
+
+    // Check if status is in allowed transition
+    if (!transition.from.includes(existingDoc.status)) {
+      return {
+        success: false,
+        error: "Request not found or already moved to another status",
+      };
+    }
+
+    // Build update object
+    const updateFields: any = {
+      status: transition.to,
+      processedBy: changedBy,
+      statusHistory: [
+        ...(existingDoc.statusHistory || []),
         {
-          $set: {
-            status: transition.to,
-            processedBy: changedBy,
-            ...(action === "reject" ? { remarks: trimmedRemarks } : {}),
-            ...(transition.dateField
-              ? { [transition.dateField]: "$$NOW" }
-              : {}),
-            statusHistory: {
-              $concatArrays: [
-                { $ifNull: ["$statusHistory", []] },
-                [
-                  {
-                    status: transition.to,
-                    timestamp: "$$NOW",
-                    changedBy,
-                    remarks: trimmedRemarks,
-                  },
-                ],
-              ],
-            },
-          },
+          status: transition.to,
+          timestamp: new Date(),
+          changedBy,
+          remarks: trimmedRemarks,
         },
       ],
-      { returnDocument: "after" },
+    };
+
+    if (action === "reject") {
+      updateFields.remarks = trimmedRemarks;
+    }
+
+    if (transition.dateField) {
+      updateFields[transition.dateField] = new Date();
+    }
+
+    // Use findOneAndUpdate with regular update object
+    const updated = await DocumentRequest.findOneAndUpdate(
+      { requestId, status: { $in: transition.from } },
+      { $set: updateFields },
+      { new: true },
     ).lean();
 
     if (!updated) {
@@ -348,21 +566,59 @@ export async function processDocumentRequest(
     }
 
     const doc: any = updated;
-    sendDocumentRequestEmail({
-      email: doc.student?.email || "",
-      studentName: `${doc.student?.firstName || ""} ${doc.student?.lastName || ""}`.trim(),
-      requestId: doc.requestId,
-      documentTypeLabel:
-        DOCUMENT_TYPE_LABELS[doc.documentType as DocumentType] ||
-        doc.documentType,
-      copies: doc.copies,
-      purpose: doc.purpose,
-      notificationType:
-        transition.to === "processing"
-          ? "processing"
-          : (transition.to as "ready-for-pickup" | "released" | "rejected"),
-      remarks: trimmedRemarks || undefined,
-    }).catch((err) => console.error("Document status email failed:", err));
+    const studentName =
+      `${doc.student?.firstName || ""} ${doc.student?.lastName || ""}`.trim();
+    const documentTypeLabel =
+      DOCUMENT_TYPE_LABELS[doc.documentType as DocumentType] ||
+      doc.documentType;
+
+    // Get contact number from student info or TOR details
+    const contactNumber =
+      doc.student?.contactNumber || doc.torDetails?.student?.contactNo || "";
+
+    console.log("=== SMS Notification Debug ===");
+    console.log("Request ID:", doc.requestId);
+    console.log("Student Name:", studentName);
+    console.log("Contact Number from student:", doc.student?.contactNumber);
+    console.log(
+      "Contact Number from TOR details:",
+      doc.torDetails?.student?.contactNo,
+    );
+    console.log("Final Contact Number:", contactNumber);
+    console.log("Status:", transition.to);
+    console.log("==============================");
+
+    // Send email notification if email exists
+    if (doc.student?.email) {
+      sendDocumentRequestEmail({
+        email: doc.student.email,
+        studentName,
+        requestId: doc.requestId,
+        documentTypeLabel,
+        copies: doc.copies,
+        purpose: doc.purpose,
+        notificationType:
+          transition.to === "processing"
+            ? "processing"
+            : (transition.to as "ready-for-pickup" | "released" | "rejected"),
+        remarks: trimmedRemarks || undefined,
+      }).catch((err) => console.error("Document status email failed:", err));
+    }
+
+    // Send SMS notification if contact number exists
+    if (contactNumber) {
+      console.log("Sending SMS notification to:", contactNumber);
+      sendDocumentRequestSMS(
+        contactNumber,
+        studentName,
+        doc.requestId,
+        documentTypeLabel,
+        transition.to,
+        trimmedRemarks || undefined,
+      ).catch((err) => console.error("Document status SMS failed:", err));
+    } else {
+      console.log("No contact number found. SMS notification skipped.");
+    }
 
     revalidateDocumentPaths();
 
