@@ -4,6 +4,7 @@
 import connectDB from "@/lib/mongodb";
 import Ticket from "@/models/Ticket";
 import { sendTicketNotificationEmail } from "@/lib/email";
+import { sendTicketNotificationSMS } from "@/lib/sms";
 
 interface NotificationResult {
   success: boolean;
@@ -34,26 +35,42 @@ export async function notifyNowServing(
 
     const ticketData = ticket as any;
     const recipientEmail = ticketData.requester?.email;
-
-    if (!recipientEmail) {
-      return { success: false, error: "No email provided" };
-    }
+    const recipientPhone = ticketData.requester?.contactNumber;
 
     const studentName =
       `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
 
-    const emailSent = await sendTicketNotificationEmail({
-      email: recipientEmail,
-      studentName: studentName || "Student",
-      ticketNumber: ticketData.ticketNumber,
-      ticketId: ticketData.ticketId,
-      transactionType: ticketData.transactionType,
-      queuePosition: 0,
-      notificationType: "serving",
-      staffName,
-    });
+    let notified = false;
 
-    return { success: true, notified: emailSent };
+    // Send email notification
+    if (recipientEmail) {
+      const emailSent = await sendTicketNotificationEmail({
+        email: recipientEmail,
+        studentName: studentName || "Student",
+        ticketNumber: ticketData.ticketNumber,
+        ticketId: ticketData.ticketId,
+        transactionType: ticketData.transactionType,
+        queuePosition: 0,
+        notificationType: "serving",
+        staffName,
+      });
+      notified = emailSent;
+    }
+
+    // Send SMS notification
+    if (recipientPhone) {
+      console.log("SMS: Sending serving notification to:", recipientPhone);
+      await sendTicketNotificationSMS(
+        recipientPhone,
+        studentName || "Student",
+        ticketData.ticketNumber,
+        ticketData.transactionType,
+        "serving",
+      ).catch((err) => console.error("Ticket serving SMS failed:", err));
+      notified = true;
+    }
+
+    return { success: true, notified };
   } catch (error) {
     console.error("Error notifying now serving:", error);
     return { success: false, error: "Failed to send notification" };
@@ -90,26 +107,42 @@ export async function notifyNextInLine(
 
     const ticketData = nextTicket as any;
     const recipientEmail = ticketData.requester?.email;
-
-    if (!recipientEmail) {
-      return { success: false, error: "No email provided" };
-    }
+    const recipientPhone = ticketData.requester?.contactNumber;
 
     const studentName =
       `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
 
-    const emailSent = await sendTicketNotificationEmail({
-      email: recipientEmail,
-      studentName: studentName || "Student",
-      ticketNumber: ticketData.ticketNumber,
-      ticketId: ticketData.ticketId,
-      transactionType: ticketData.transactionType,
-      queuePosition: 1,
-      notificationType: "next",
-      staffName,
-    });
+    let notified = false;
 
-    return { success: true, notified: emailSent };
+    // Send email notification
+    if (recipientEmail) {
+      const emailSent = await sendTicketNotificationEmail({
+        email: recipientEmail,
+        studentName: studentName || "Student",
+        ticketNumber: ticketData.ticketNumber,
+        ticketId: ticketData.ticketId,
+        transactionType: ticketData.transactionType,
+        queuePosition: 1,
+        notificationType: "next",
+        staffName,
+      });
+      notified = emailSent;
+    }
+
+    // Send SMS notification
+    if (recipientPhone) {
+      console.log("SMS: Sending next-in-line notification to:", recipientPhone);
+      await sendTicketNotificationSMS(
+        recipientPhone,
+        studentName || "Student",
+        ticketData.ticketNumber,
+        ticketData.transactionType,
+        "next",
+      ).catch((err) => console.error("Ticket next-in-line SMS failed:", err));
+      notified = true;
+    }
+
+    return { success: true, notified };
   } catch (error) {
     console.error("Error notifying next in line:", error);
     return { success: false, error: "Failed to send notification" };
@@ -150,22 +183,41 @@ export async function notifyNextTwoInLine(
     for (let i = 0; i < nextTickets.length; i++) {
       const ticketData = nextTickets[i] as any;
       const recipientEmail = ticketData.requester?.email;
+      const recipientPhone = ticketData.requester?.contactNumber;
 
-      if (recipientEmail) {
+      if (recipientEmail || recipientPhone) {
         const studentName =
           `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
         const position = i + 1;
 
-        await sendTicketNotificationEmail({
-          email: recipientEmail,
-          studentName: studentName || "Student",
-          ticketNumber: ticketData.ticketNumber,
-          ticketId: ticketData.ticketId,
-          transactionType: ticketData.transactionType,
-          queuePosition: position,
-          notificationType: position === 1 ? "next" : "reminder",
-          staffName,
-        });
+        // Send email
+        if (recipientEmail) {
+          await sendTicketNotificationEmail({
+            email: recipientEmail,
+            studentName: studentName || "Student",
+            ticketNumber: ticketData.ticketNumber,
+            ticketId: ticketData.ticketId,
+            transactionType: ticketData.transactionType,
+            queuePosition: position,
+            notificationType: position === 1 ? "next" : "reminder",
+            staffName,
+          });
+        }
+
+        // Send SMS
+        if (recipientPhone) {
+          console.log(
+            `SMS: Sending position ${position} notification to:`,
+            recipientPhone,
+          );
+          await sendTicketNotificationSMS(
+            recipientPhone,
+            studentName || "Student",
+            ticketData.ticketNumber,
+            ticketData.transactionType,
+            position === 1 ? "next" : "reminder",
+          ).catch((err) => console.error("Ticket reminder SMS failed:", err));
+        }
 
         notifiedCount++;
       }
@@ -201,26 +253,42 @@ export async function notifySkipped(
 
     const ticketData = ticket as any;
     const recipientEmail = ticketData.requester?.email;
-
-    if (!recipientEmail) {
-      return { success: false, error: "No email provided" };
-    }
+    const recipientPhone = ticketData.requester?.contactNumber;
 
     const studentName =
       `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
 
-    const emailSent = await sendTicketNotificationEmail({
-      email: recipientEmail,
-      studentName: studentName || "Student",
-      ticketNumber: ticketData.ticketNumber,
-      ticketId: ticketData.ticketId,
-      transactionType: ticketData.transactionType,
-      queuePosition: 0,
-      notificationType: "skipped",
-      staffName,
-    });
+    let notified = false;
 
-    return { success: true, notified: emailSent };
+    // Send email notification
+    if (recipientEmail) {
+      const emailSent = await sendTicketNotificationEmail({
+        email: recipientEmail,
+        studentName: studentName || "Student",
+        ticketNumber: ticketData.ticketNumber,
+        ticketId: ticketData.ticketId,
+        transactionType: ticketData.transactionType,
+        queuePosition: 0,
+        notificationType: "skipped",
+        staffName,
+      });
+      notified = emailSent;
+    }
+
+    // Send SMS notification
+    if (recipientPhone) {
+      console.log("SMS: Sending skipped notification to:", recipientPhone);
+      await sendTicketNotificationSMS(
+        recipientPhone,
+        studentName || "Student",
+        ticketData.ticketNumber,
+        ticketData.transactionType,
+        "skipped",
+      ).catch((err) => console.error("Ticket skipped SMS failed:", err));
+      notified = true;
+    }
+
+    return { success: true, notified };
   } catch (error) {
     console.error("Error notifying skipped:", error);
     return { success: false, error: "Failed to send notification" };
@@ -259,19 +327,35 @@ export async function notifyAllWaiting(
     for (let i = 0; i < waitingTickets.length; i++) {
       const ticketData = waitingTickets[i] as any;
       const recipientEmail = ticketData.requester?.email;
+      const recipientPhone = ticketData.requester?.contactNumber;
 
-      if (recipientEmail) {
+      if (recipientEmail || recipientPhone) {
         const studentName =
           `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
 
-        await sendTicketNotificationEmail({
-          email: recipientEmail,
-          studentName: studentName || "Student",
-          ticketNumber: ticketData.ticketNumber,
-          ticketId: ticketData.ticketId,
-          transactionType: ticketData.transactionType,
-          queuePosition: i + 1,
-        });
+        // Send email
+        if (recipientEmail) {
+          await sendTicketNotificationEmail({
+            email: recipientEmail,
+            studentName: studentName || "Student",
+            ticketNumber: ticketData.ticketNumber,
+            ticketId: ticketData.ticketId,
+            transactionType: ticketData.transactionType,
+            queuePosition: i + 1,
+          });
+        }
+
+        // Send SMS
+        if (recipientPhone) {
+          await sendTicketNotificationSMS(
+            recipientPhone,
+            studentName || "Student",
+            ticketData.ticketNumber,
+            ticketData.transactionType,
+            "waiting",
+            i + 1,
+          ).catch((err) => console.error("Ticket waiting SMS failed:", err));
+        }
 
         notifiedCount++;
       }
