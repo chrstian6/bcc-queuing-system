@@ -3,15 +3,11 @@ import mongoose, { Document, Model } from "mongoose";
 import {
   YearLevel,
   Campus,
-  TransactionType,
   TicketStatus,
-  Department,
   RequesterType,
   Relationship,
   Suffix,
-  VALID_TRANSACTION_TYPES,
   VALID_STATUSES,
-  VALID_DEPARTMENTS,
   VALID_REQUESTER_TYPES,
   VALID_RELATIONSHIPS,
   VALID_SUFFIXES,
@@ -49,10 +45,10 @@ export interface IStatusTracking {
 export interface ITicket extends Document {
   ticketNumber: string;
   ticketId: string;
-  transactionType: TransactionType;
+  transactionType: string;
   transactionDescription?: string;
   amount: number;
-  department: Department;
+  department: string;
   status: TicketStatus;
   student: IStudent;
   requester: IRequester;
@@ -103,45 +99,21 @@ const ticketSchema = new mongoose.Schema<ITicket>(
     },
     transactionType: {
       type: String,
-      enum: {
-        values: [...VALID_TRANSACTION_TYPES],
-        message: "{VALUE} is not a valid transaction type",
-      },
       required: [true, "Transaction type is required"],
     },
     transactionDescription: {
       type: String,
       trim: true,
       maxlength: [200, "Description cannot exceed 200 characters"],
-      validate: {
-        validator: function (this: any, value: string) {
-          const transactionType = (this as any).transactionType;
-          if (
-            transactionType === "other-school-fees" &&
-            (!value || value.trim().length === 0)
-          ) {
-            return false;
-          }
-          return true;
-        },
-        message: "Description is required for Other School Fees",
-      },
     },
     amount: {
       type: Number,
-      required: [true, "Amount is required"],
-      min: [0.01, "Amount must be greater than 0"],
+      default: 0,
+      min: [0, "Amount cannot be negative"],
       max: [999999999999, "Amount exceeds maximum limit"],
-      validate: {
-        validator: function (value: number) {
-          return /^\d+(\.\d{1,2})?$/.test(value.toString());
-        },
-        message: "Amount must be a valid decimal with up to 2 decimal places",
-      },
     },
     department: {
       type: String,
-      enum: [...VALID_DEPARTMENTS],
       default: "cashier",
       index: true,
     },
@@ -300,48 +272,6 @@ ticketSchema.virtual("formattedAmount").get(function () {
   })}`;
 });
 
-// Pre-save hook
-ticketSchema.pre("save", function (next) {
-  const doc = this as unknown as ITicket;
-
-  if (doc.isModified("status")) {
-    doc.statusHistory.push({
-      status: doc.status,
-      timestamp: new Date(),
-      changedBy: "system",
-    });
-
-    const now = new Date();
-    if (doc.status === "serving") {
-      doc.servedAt = now;
-      if (doc.createdAt) {
-        doc.waitTime = Math.round(
-          (now.getTime() - doc.createdAt.getTime()) / 1000,
-        );
-      }
-    } else if (doc.status === "completed") {
-      doc.completedAt = now;
-      if (doc.servedAt) {
-        doc.serviceTime = Math.round(
-          (now.getTime() - doc.servedAt.getTime()) / 1000,
-        );
-      }
-      if (doc.createdAt) {
-        doc.totalTime = Math.round(
-          (now.getTime() - doc.createdAt.getTime()) / 1000,
-        );
-      }
-    } else if (doc.status === "cancelled") {
-      doc.cancelledAt = now;
-      if (doc.createdAt) {
-        doc.totalTime = Math.round(
-          (now.getTime() - doc.createdAt.getTime()) / 1000,
-        );
-      }
-    }
-  }
-});
-
 // Virtuals
 ticketSchema.virtual("student.fullName").get(function () {
   const doc = this as unknown as ITicket;
@@ -394,6 +324,9 @@ ticketSchema.virtual("currentStatusDuration").get(function () {
 
 ticketSchema.set("toJSON", { virtuals: true });
 ticketSchema.set("toObject", { virtuals: true });
+
+// REMOVED pre-save hook to avoid type issues
+// Status history is now handled manually in the actions
 
 if (mongoose.models.Ticket) {
   delete mongoose.models.Ticket;

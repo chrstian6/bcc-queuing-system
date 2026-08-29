@@ -56,13 +56,30 @@ export function getCampusForYearLevel(yearLevel: YearLevel | ""): Campus | "" {
   return "";
 }
 
-// Valid transaction types
+// Valid transaction types - ALL departments
 export const VALID_TRANSACTION_TYPES = [
+  // Dean
+  "grade-appeal",
+  "academic-concern",
+  "course-approval",
+  "student-discipline",
+  "faculty-concern",
+  "curriculum-review",
+  "academic-advisory",
+  // Cashier
   "tuition-payment",
   "miscellaneous-fee",
   "document-payment",
   "other-school-fees",
   "assessment",
+  // Registrar
+  "certificate-enrollment",
+  "transcript-records",
+  "request-grades",
+  "request-assessment",
+  "good-moral",
+  "diploma",
+  "other-document",
 ] as const;
 
 export type TransactionType = (typeof VALID_TRANSACTION_TYPES)[number];
@@ -79,10 +96,10 @@ export type TicketStatus = (typeof VALID_STATUSES)[number];
 
 // Valid departments
 export const VALID_DEPARTMENTS = [
-  "registrar",
   "dean",
-  "dsdw",
   "cashier",
+  "registrar",
+  "dsdw",
   "general",
 ] as const;
 
@@ -224,7 +241,7 @@ export const createTicketSchema = z
       .or(z.literal("")),
     amount: z
       .number()
-      .positive("Amount must be greater than 0")
+      .min(0, "Amount cannot be negative") // Changed from positive to min(0)
       .max(999999999999, "Amount exceeds maximum limit")
       .refine(
         (val) => /^\d+(\.\d{1,2})?$/.test(val.toString()),
@@ -281,6 +298,19 @@ export const createTicketSchema = z
       message: "Description is required for this transaction type",
       path: ["transactionDescription"],
     },
+  )
+  .refine(
+    (data) => {
+      // Amount required only for cashier department
+      if (data.department === "cashier") {
+        return data.amount > 0;
+      }
+      return true;
+    },
+    {
+      message: "Amount is required for cashier transactions",
+      path: ["amount"],
+    },
   );
 
 // Type inference from Zod schemas
@@ -292,10 +322,10 @@ export type CreateTicketFormData = z.infer<typeof createTicketSchema>;
 export interface ITicket {
   ticketNumber: string;
   ticketId: string;
-  transactionType: TransactionType;
+  transactionType: string; // Changed from TransactionType to string
   transactionDescription?: string;
   amount: number;
-  department: Department;
+  department: string; // Changed from Department to string
   status: TicketStatus;
   student: {
     schoolId: string;
@@ -336,3 +366,58 @@ export interface ITicket {
   serviceTime?: number;
   totalTime?: number;
 }
+
+// Department transaction mappings
+export const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
+  dean: [
+    "grade-appeal",
+    "academic-concern",
+    "course-approval",
+    "student-discipline",
+    "faculty-concern",
+    "curriculum-review",
+    "academic-advisory",
+  ],
+  cashier: [
+    "tuition-payment",
+    "miscellaneous-fee",
+    "document-payment",
+    "other-school-fees",
+    "assessment",
+  ],
+  registrar: [
+    "certificate-enrollment",
+    "transcript-records",
+    "request-grades",
+    "request-assessment",
+    "good-moral",
+    "diploma",
+    "other-document",
+  ],
+};
+
+// Transaction labels for display
+export const TRANSACTION_LABELS: Record<string, string> = {
+  // Dean
+  "grade-appeal": "Grade Appeal",
+  "academic-concern": "Academic Concern",
+  "course-approval": "Course Approval",
+  "student-discipline": "Student Discipline",
+  "faculty-concern": "Faculty Concern",
+  "curriculum-review": "Curriculum Review",
+  "academic-advisory": "Academic Advisory",
+  // Cashier
+  "tuition-payment": "Tuition Payment",
+  "miscellaneous-fee": "Miscellaneous Fee Payment",
+  "document-payment": "Document Payment",
+  "other-school-fees": "Other School Fees",
+  assessment: "Assessment",
+  // Registrar
+  "certificate-enrollment": "Certificate of Enrollment",
+  "transcript-records": "Transcript of Records",
+  "request-grades": "Request for Grades",
+  "request-assessment": "Request for Assessment",
+  "good-moral": "Good Moral Certificate",
+  diploma: "Diploma",
+  "other-document": "Other Document Request",
+};

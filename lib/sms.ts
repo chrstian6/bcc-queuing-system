@@ -19,7 +19,8 @@ const IPROG_SMS_STATUS_ENDPOINT =
 
 /**
  * Format phone number for IPROG SMS.
- * IPROG expects a local-format number like 09XXXXXXXXX
+ * IPROG expects a local-format number like 09XXXXXXXXX (their docs use this
+ * consistently), so normalize to that rather than the 63-prefixed format.
  */
 function formatPhoneForSMS(phone: string): string {
   const cleanPhone = phone.replace(/\D/g, "");
@@ -86,6 +87,7 @@ export async function sendSMS(
     }
 
     // IPROG returns { status: 200, message: "...", message_id: "iSms-..." }
+    // on success, or { status: "error"/500, message: "..." } on failure.
     const isSuccess = data.status === 200 || data.status === "success";
 
     if (!isSuccess) {
@@ -204,6 +206,7 @@ export async function sendDocumentRequestSMS(
         message = `BCC Document Request: Hi ${studentName}, your request ${requestId} status has been updated to ${status}.`;
     }
 
+    // Limit message length (SMS max is typically 160 characters)
     if (message.length > 160) {
       message = message.substring(0, 157) + "...";
     }
@@ -222,5 +225,90 @@ export async function sendDocumentRequestSMS(
     }
   } catch (error) {
     console.error("Error in sendDocumentRequestSMS:", error);
+  }
+}
+
+/**
+ * Send SMS notification for ticket updates
+ */
+export async function sendTicketNotificationSMS(
+  phoneNumber: string,
+  studentName: string,
+  ticketNumber: string,
+  transactionType: string,
+  status: string,
+  queuePosition?: number,
+  staffName?: string,
+): Promise<void> {
+  try {
+    if (!phoneNumber) {
+      console.log("No phone number provided for ticket SMS notification");
+      return;
+    }
+
+    const transactionLabel = transactionType
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (l: string) => l.toUpperCase());
+
+    console.log("=== Ticket SMS Notification ===");
+    console.log("Phone number:", phoneNumber);
+    console.log("Student name:", studentName);
+    console.log("Ticket number:", ticketNumber);
+    console.log("Transaction type:", transactionLabel);
+    console.log("Status:", status);
+    console.log("Queue position:", queuePosition || "N/A");
+    console.log("Staff name:", staffName || "N/A");
+    console.log("===================================");
+
+    let message = "";
+
+    switch (status) {
+      case "submitted":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} has been created. Position: ${queuePosition || 1}. We'll notify you when it's your turn.`;
+        break;
+      case "serving":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} is now being served${staffName ? ` by ${staffName}` : ""}. Please proceed to the counter.`;
+        break;
+      case "next":
+        message = `BCC Queue: Hi ${studentName}, you're next in line! Ticket ${ticketNumber} for ${transactionLabel} will be served soon. Please be ready.`;
+        break;
+      case "reminder":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} is in position ${queuePosition || 2}. Please wait for your turn.`;
+        break;
+      case "skipped":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} was cancelled. Please visit the cashier for assistance.`;
+        break;
+      case "cancelled":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} was cancelled. Please visit the cashier for assistance.`;
+        break;
+      case "completed":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} has been completed. Thank you!`;
+        break;
+      case "waiting":
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} is in position ${queuePosition || 1}. Please wait for your turn.`;
+        break;
+      default:
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} status has been updated to ${status}.`;
+    }
+
+    // Limit message length (SMS max is typically 160 characters)
+    if (message.length > 160) {
+      message = message.substring(0, 157) + "...";
+    }
+
+    console.log("Sending ticket SMS with message:", message);
+
+    const result = await sendSMS(phoneNumber, message);
+
+    if (!result.success) {
+      console.error("Failed to send ticket SMS notification:", result.error);
+    } else {
+      console.log(
+        `Ticket SMS sent successfully to ${phoneNumber}, messageId: ${result.messageId}`,
+      );
+      console.log(`SMS status link: ${result.messageStatusLink}`);
+    }
+  } catch (error) {
+    console.error("Error in sendTicketNotificationSMS:", error);
   }
 }

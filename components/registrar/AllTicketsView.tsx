@@ -14,7 +14,13 @@ import {
 import { getSession } from "@/actions/auth";
 import { getStaffAllTickets } from "@/actions/ticket";
 import { getDepartmentStaffCounters } from "@/actions/ticketNumberDistribution";
-import { filterTicketsByRole } from "@/lib/ticketUtils";
+import {
+  filterTicketsByRole,
+  getRoleLabel,
+  DEAN_TRANSACTION_TYPES,
+  CASHIER_TRANSACTION_TYPES,
+  REGISTRAR_TRANSACTION_TYPES,
+} from "@/lib/ticketUtils";
 
 interface AllTicketsViewProps {
   department: string;
@@ -74,6 +80,8 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [transactionTypeFilter, setTransactionTypeFilter] =
+    useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [displayCount, setDisplayCount] = useState(20);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -109,7 +117,7 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
       const result = await getStaffAllTickets(userStaffId, filters);
 
       if (result.success) {
-        // Filter tickets by role (dean sees only dean tickets, cashier sees only cashier tickets)
+        // Filter by role (department + transaction type)
         const filtered = filterTicketsByRole(
           result.tickets || [],
           userStaffRole,
@@ -156,15 +164,37 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
     return name;
   };
 
+  // FIXED: Get valid transaction types for this staff role
+  const getValidTransactionTypes = (): string[] => {
+    if (staffRole === "dean") return [...DEAN_TRANSACTION_TYPES];
+    if (staffRole === "cashier") return [...CASHIER_TRANSACTION_TYPES];
+    if (staffRole === "registrar") return [...REGISTRAR_TRANSACTION_TYPES];
+    return [];
+  };
+
+  const validTransactionTypes = getValidTransactionTypes();
+
   const filteredTickets = tickets.filter((ticket) => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return (
-      ticket.ticketNumber?.toLowerCase().includes(search) ||
-      ticket.student?.firstName?.toLowerCase().includes(search) ||
-      ticket.student?.lastName?.toLowerCase().includes(search) ||
-      ticket.student?.schoolId?.toLowerCase().includes(search)
-    );
+    // Filter by search
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      const matchesSearch =
+        ticket.ticketNumber?.toLowerCase().includes(search) ||
+        ticket.student?.firstName?.toLowerCase().includes(search) ||
+        ticket.student?.lastName?.toLowerCase().includes(search) ||
+        ticket.student?.schoolId?.toLowerCase().includes(search);
+      if (!matchesSearch) return false;
+    }
+
+    // Filter by transaction type
+    if (
+      transactionTypeFilter !== "all" &&
+      ticket.transactionType !== transactionTypeFilter
+    ) {
+      return false;
+    }
+
+    return true;
   });
 
   const displayedTickets = filteredTickets.slice(0, displayCount);
@@ -235,7 +265,15 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
     ).length,
   };
 
-  const roleLabel = staffRole === "dean" ? "Dean" : "Cashier";
+  // Transaction type counts
+  const transactionTypeCounts: Record<string, number> = {};
+  validTransactionTypes.forEach((type) => {
+    transactionTypeCounts[type] = tickets.filter(
+      (t) => t.transactionType === type,
+    ).length;
+  });
+
+  const roleLabel = getRoleLabel(staffRole);
 
   if (isLoading) {
     return <HistorySkeleton />;
@@ -322,6 +360,40 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
         ))}
       </div>
 
+      {/* Transaction Type Filter - Only show if there are valid types */}
+      {validTransactionTypes.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <button
+            onClick={() => setTransactionTypeFilter("all")}
+            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              transactionTypeFilter === "all"
+                ? "bg-[#1B5A8C]/10 text-[#1B5A8C] border border-[#1B5A8C]/20"
+                : "bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            All Types
+          </button>
+          {validTransactionTypes.map((type) => (
+            <button
+              key={type}
+              onClick={() => setTransactionTypeFilter(type)}
+              className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                transactionTypeFilter === type
+                  ? "bg-[#1B5A8C]/10 text-[#1B5A8C] border border-[#1B5A8C]/20"
+                  : "bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200"
+              }`}
+            >
+              {formatTransaction(type)}
+              {transactionTypeCounts[type] > 0 && (
+                <span className="ml-1 text-gray-400 tabular-nums">
+                  {transactionTypeCounts[type]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -341,9 +413,9 @@ export function AllTicketsView({ department }: AllTicketsViewProps) {
             <Clock className="w-8 h-8 text-gray-300 mx-auto mb-3" />
             <p className="text-xs text-gray-500">No tickets found</p>
             <p className="text-xs text-gray-400 mt-1">
-              {statusFilter === "all"
+              {statusFilter === "all" && transactionTypeFilter === "all"
                 ? `${roleLabel} ticket history will appear here`
-                : `No ${statusFilter} tickets`}
+                : "No tickets match the current filters"}
             </p>
           </div>
         ) : (

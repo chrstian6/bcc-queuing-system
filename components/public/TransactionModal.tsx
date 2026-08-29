@@ -521,6 +521,7 @@ export default function TransactionModal({
         transactionType: selectedTransaction!,
         transactionDescription: specifyTransaction.trim() || undefined,
         amount: ticketAmount,
+        department: department || "cashier", // ADD department here
         student: {
           schoolId: studentInfo.schoolId.trim() || "",
           firstName: sanitizeInput(studentInfo.firstName),
