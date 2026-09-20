@@ -6,9 +6,7 @@ import type { Session } from "next-auth";
 import { ROLES } from "./roles";
 
 /** Session whose user has one of the given roles, else null. */
-export async function requireRole(
-  ...roles: string[]
-): Promise<Session | null> {
+export async function requireRole(...roles: string[]): Promise<Session | null> {
   const session = await auth();
   if (!session?.user?.role) return null;
   return roles.includes(session.user.role) ? session : null;

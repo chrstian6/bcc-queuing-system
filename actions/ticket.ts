@@ -109,9 +109,6 @@ const TRANSACTIONS_NEEDING_DESCRIPTION = [
   "other-document",
 ];
 
-/**
- * Helper function to resolve department from staff record
- */
 function resolveDepartment(staffData: any, session: any): string {
   return (
     staffData?.staffRole ||
@@ -121,9 +118,6 @@ function resolveDepartment(staffData: any, session: any): string {
   );
 }
 
-/**
- * Create a new ticket - automatically distributed to available staff
- */
 export async function createTicket(
   data: CreateTicketData,
 ): Promise<TicketResponse> {
@@ -445,7 +439,7 @@ export async function createTicket(
 }
 
 // ============================================================
-// Get functions with FIXED department resolution
+// Get functions
 // ============================================================
 
 export async function getTicketByNumber(ticketNumber: string) {
@@ -475,7 +469,12 @@ export async function getTicketsBySchoolId(schoolId: string) {
 
 export async function getPendingTickets(department?: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -503,7 +502,12 @@ export async function getPendingTickets(department?: string) {
 
 export async function getTodayTickets(department?: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -530,7 +534,12 @@ export async function getTodayTickets(department?: string) {
 
 export async function getTicketsByType(transactionType: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -548,7 +557,12 @@ export async function getTicketsByType(transactionType: string) {
 
 export async function getQueueStats(department?: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -601,7 +615,12 @@ export async function getQueueStats(department?: string) {
 
 export async function getNextToServe(department?: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -636,7 +655,67 @@ export async function getNextToServe(department?: string) {
 }
 
 // ============================================================
-// FIXED: Staff functions with proper department resolution
+// REPORTS FUNCTION
+// ============================================================
+
+/**
+ * Get tickets for reports with date range support
+ * Accessible by ADMIN, DEAN, REGISTRAR, CASHIER
+ */
+export async function getReportsTickets(
+  department: string,
+  dateRange: "today" | "week" | "month" | "all" = "week",
+) {
+  try {
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.REGISTRAR,
+      ROLES.DEAN,
+      ROLES.CASHIER,
+    );
+    if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
+    await connectDB();
+
+    const query: any = { department };
+
+    if (dateRange !== "all") {
+      const now = new Date();
+      const startDate = new Date(now);
+
+      if (dateRange === "today") {
+        startDate.setHours(0, 0, 0, 0);
+      } else if (dateRange === "week") {
+        startDate.setDate(now.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+      } else if (dateRange === "month") {
+        startDate.setMonth(now.getMonth() - 1);
+        startDate.setHours(0, 0, 0, 0);
+      }
+
+      query.createdAt = { $gte: startDate };
+    }
+
+    console.log("getReportsTickets query:", JSON.stringify(query));
+
+    const tickets = await Ticket.find(query as any)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`Found ${tickets.length} tickets for ${department}`);
+
+    return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
+  } catch (error) {
+    console.error(`Error fetching ${department} reports:`, error);
+    return {
+      success: false,
+      error: `Failed to fetch ${department} reports`,
+    };
+  }
+}
+
+// ============================================================
+// Staff functions
 // ============================================================
 
 export async function getStaffQueueData(staffId: string) {
@@ -654,10 +733,6 @@ export async function getStaffQueueData(staffId: string) {
 
     const staffData = staff as any;
     const department = resolveDepartment(staffData, session);
-
-    console.log(
-      `getStaffQueueData - Resolved department: ${department} for staff: ${staffId}`,
-    );
 
     const query: any = {
       department: department,
@@ -698,10 +773,6 @@ export async function getStaffAllTickets(
     const staffData = staff as any;
     const department = resolveDepartment(staffData, session);
 
-    console.log(
-      `getStaffAllTickets - Resolved department: ${department} for staff: ${staffId}`,
-    );
-
     const query: any = { department: department };
 
     if (filters?.status && filters.status !== "all") {
@@ -726,10 +797,6 @@ export async function getStaffAllTickets(
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log(
-      `Found ${tickets.length} tickets for department: ${department}`,
-    );
-
     return {
       success: true,
       tickets: JSON.parse(JSON.stringify(tickets)),
@@ -750,7 +817,12 @@ export async function getStaffTickets(
 
 export async function getNextTicketForStaff(staffId: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -920,7 +992,12 @@ export async function completeServedTicket(
 
 export async function getStaffQueueStats(staffId: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -977,7 +1054,12 @@ export async function getAllTickets(filters?: {
   department?: string;
 }) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -1009,7 +1091,12 @@ export async function getDepartmentTickets(
   filters?: { status?: string; date?: string },
 ) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     await connectDB();
@@ -1148,7 +1235,12 @@ export async function completeTicket(ticketNumber: string) {
 
 export async function cancelTicket(ticketNumber: string) {
   try {
-    const session = await requireRole(ROLES.ADMIN, ROLES.CASHIER);
+    const session = await requireRole(
+      ROLES.ADMIN,
+      ROLES.CASHIER,
+      ROLES.DEAN,
+      ROLES.REGISTRAR,
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
     const changedBy =
