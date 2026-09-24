@@ -22,7 +22,6 @@ import {
 import {
   LayoutDashboard,
   ListOrdered,
-  Receipt,
   ChartColumn,
   Settings,
   Bell,
@@ -161,6 +160,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
+  // Cashier nav — Transactions removed
   const cashierNavMain = [
     {
       title: "Dashboard",
@@ -176,34 +176,6 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       items: [
         { title: "Serve Tickets", url: "/staff/cashier/queue" },
         { title: "Queue History", url: "/staff/cashier/queue?view=all" },
-      ],
-    },
-    {
-      title: "Transactions",
-      url: "/staff/cashier/transactions",
-      icon: Receipt,
-      isActive: pathname.startsWith("/staff/cashier/transactions"),
-      items: [
-        {
-          title: "Tuition Payments",
-          url: "/staff/cashier/transactions?type=tuition-payment",
-        },
-        {
-          title: "Miscellaneous Fees",
-          url: "/staff/cashier/transactions?type=miscellaneous-fee",
-        },
-        {
-          title: "Document Payments",
-          url: "/staff/cashier/transactions?type=document-payment",
-        },
-        {
-          title: "Other School Fees",
-          url: "/staff/cashier/transactions?type=other-school-fees",
-        },
-        {
-          title: "Assessments",
-          url: "/staff/cashier/transactions?type=assessment",
-        },
       ],
     },
     {
@@ -288,6 +260,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
+  // Cashier projects — "All Transactions" removed
   const projectsByVariant = {
     admin: [
       { name: "Create Account", url: "/admin/users/create", icon: UserPlus },
@@ -315,9 +288,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         icon: ChartColumn,
       },
       {
-        name: "All Transactions",
-        url: "/staff/cashier/transactions",
-        icon: Receipt,
+        name: "Queue History",
+        url: "/staff/cashier/queue?view=all",
+        icon: ListOrdered,
       },
     ],
     registrar: [

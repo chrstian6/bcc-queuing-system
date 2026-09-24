@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus_Jakarta_Sans, Fraunces } from "next/font/google";
 import { useState, useEffect, useRef } from "react";
+import { Menu, X } from "lucide-react";
 import gsap from "gsap";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -29,6 +30,7 @@ export default function Header({ onLoginClick }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isAtFeatures, setIsAtFeatures] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const loginButtonRef = useRef<HTMLButtonElement>(null);
@@ -37,7 +39,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
   const newTextRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
 
-  // Handle login click - use onLoginClick prop if provided, otherwise navigate to login page
   const handleLoginClick = () => {
     if (onLoginClick) {
       onLoginClick();
@@ -46,7 +47,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
     }
   };
 
-  // Split text into characters
   const splitIntoCharacters = (text: string): string[] => {
     return Array.from(text);
   };
@@ -54,8 +54,25 @@ export default function Header({ onLoginClick }: HeaderProps) {
   const textChars = splitIntoCharacters("Login");
   const newTextChars = splitIntoCharacters("Login");
 
-  // Synced hover roll animation — old text, white bg, and new text all
-  // move together on one timeline so it reads as a single "push" motion.
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      const handleScroll = () => setIsMobileMenuOpen(false);
+      window.addEventListener("scroll", handleScroll, { passive: true });
+      return () => window.removeEventListener("scroll", handleScroll);
+    }
+  }, [isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMobileMenuOpen]);
+
   useEffect(() => {
     const oldText = oldTextRef.current;
     const newText = newTextRef.current;
@@ -66,7 +83,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
     const newChars = newText.querySelectorAll(".char-item");
     if (oldChars.length === 0 || newChars.length === 0) return;
 
-    // Kill anything mid-flight so rapid hover/unhover doesn't fight itself
     gsap.killTweensOf([hoverBg, oldChars, newChars]);
 
     const DURATION = 0.45;
@@ -75,8 +91,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
     const tl = gsap.timeline();
 
     if (isHovered) {
-      // White bg rises, old text gets pushed up & out, new text rides
-      // up into place — all starting at time 0 on the same timeline.
       tl.to(
         hoverBg,
         {
@@ -111,8 +125,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
           0,
         );
     } else {
-      // Exact mirror of the above: bg recedes, new text gets pushed
-      // back down & out, old text rides back down into place.
       tl.to(
         hoverBg,
         {
@@ -153,7 +165,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
   }, [isHovered]);
 
   useEffect(() => {
-    // Set initial state after mount
     requestAnimationFrame(() => {
       isFirstRender.current = false;
     });
@@ -206,7 +217,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
       overwrite: "auto",
     });
 
-    // Solid white background when scrolled
     if (isScrolled || isAtFeatures) {
       gsap.to(container, {
         duration: 0.7,
@@ -240,6 +250,11 @@ export default function Header({ onLoginClick }: HeaderProps) {
     }
   }, [isScrolled, isAtFeatures]);
 
+  const handleMobileNavClick = (href: string) => {
+    setIsMobileMenuOpen(false);
+    router.push(href);
+  };
+
   return (
     <div className={`${plusJakarta.variable} ${fraunces.variable}`}>
       <header
@@ -264,7 +279,11 @@ export default function Header({ onLoginClick }: HeaderProps) {
         >
           <div className="h-[56px] flex items-center justify-between relative px-4 md:px-6">
             {/* SmartQ Logo */}
-            <Link href="/" className="flex items-center gap-3 shrink-0 group">
+            <Link
+              href="/"
+              className="flex items-center gap-3 shrink-0 group"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
               <span
                 className="font-black tracking-tight transition-colors duration-300"
                 style={{
@@ -278,7 +297,7 @@ export default function Header({ onLoginClick }: HeaderProps) {
               </span>
             </Link>
 
-            {/* Center Navigation */}
+            {/* Center Navigation - Desktop Only */}
             <nav className="hidden md:flex items-center gap-6 lg:gap-8">
               <Link
                 href="/"
@@ -304,47 +323,11 @@ export default function Header({ onLoginClick }: HeaderProps) {
                 Live Queue
                 <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
               </Link>
-              <Link
-                href="/get-ticket"
-                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
-                style={{
-                  color: "#2A2D34",
-                  fontFamily: "var(--font-plus-jakarta)",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                Get Ticket
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
-              </Link>
-              <Link
-                href="/live-queue"
-                className="text-[13px] font-medium transition-colors duration-200 hover:text-[#0000CC] relative group/link"
-                style={{
-                  color: "#2A2D34",
-                  fontFamily: "var(--font-plus-jakarta)",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                Track
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#0000CC] transition-all duration-300 group-hover/link:w-full" />
-              </Link>
             </nav>
 
-            {/* Right Side - Shop and Login */}
+            {/* Right Side - Login (Desktop) / Menu (Mobile) */}
             <div className="flex items-center gap-3">
-              {/* Shop Text */}
-              <button
-                className="hidden md:flex items-center text-[13px] font-bold transition-all duration-200 hover:opacity-80"
-                style={{
-                  color: "#0000CC",
-                  fontFamily: "var(--font-plus-jakarta)",
-                  letterSpacing: "0.03em",
-                }}
-              >
-                Shop
-              </button>
-
-              {/* Login Button with Two Text Roll Effect */}
+              {/* Login Button - Desktop Only */}
               <button
                 ref={loginButtonRef}
                 onClick={handleLoginClick}
@@ -361,7 +344,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
                   border: "1px solid transparent",
                 }}
               >
-                {/* Hover background that fills from bottom - WHITE */}
                 <div
                   ref={hoverBgRef}
                   className="button-hover-bg absolute inset-0 rounded-full will-change-transform"
@@ -372,7 +354,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
                   }}
                 />
 
-                {/* Old Text - on blue background, rolls up */}
                 <div
                   ref={oldTextRef}
                   className="relative z-10 flex items-center justify-center overflow-hidden"
@@ -409,7 +390,6 @@ export default function Header({ onLoginClick }: HeaderProps) {
                   </div>
                 </div>
 
-                {/* New Text - on white background, rolls in */}
                 <div
                   ref={newTextRef}
                   className="relative z-10 flex items-center justify-center overflow-hidden"
@@ -446,10 +426,136 @@ export default function Header({ onLoginClick }: HeaderProps) {
                   </div>
                 </div>
               </button>
+
+              {/* Mobile Menu Toggle Button */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="md:hidden flex items-center justify-center w-9 h-9 rounded-full transition-colors"
+                style={{
+                  color: "#0000CC",
+                  backgroundColor: isMobileMenuOpen
+                    ? "rgba(0, 0, 204, 0.08)"
+                    : "transparent",
+                }}
+                aria-label="Toggle menu"
+                aria-expanded={isMobileMenuOpen}
+                type="button"
+              >
+                {isMobileMenuOpen ? (
+                  <X className="w-5 h-5" strokeWidth={2.5} />
+                ) : (
+                  <Menu className="w-5 h-5" strokeWidth={2.5} />
+                )}
+              </button>
             </div>
           </div>
         </div>
       </header>
+
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 md:hidden header-fade-in"
+            style={{
+              backgroundColor: "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
+            }}
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+
+          {/* Menu Panel */}
+          <div
+            className="fixed top-0 left-0 right-0 z-40 md:hidden header-slide-down"
+            style={{ paddingTop: "64px" }}
+          >
+            <div
+              className="mx-4 rounded-2xl overflow-hidden"
+              style={{
+                backgroundColor: "#ffffff",
+                boxShadow: "0 10px 40px rgba(0, 0, 0, 0.12)",
+                border: "1px solid rgba(0, 0, 0, 0.05)",
+              }}
+            >
+              <nav className="flex flex-col p-2">
+                {[
+                  { href: "/", label: "Home" },
+                  { href: "/live-queue", label: "Live Queue" },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => handleMobileNavClick(item.href)}
+                    className="flex items-center px-4 py-3 text-left rounded-xl transition-colors hover:bg-gray-50 active:bg-gray-100"
+                    style={{
+                      color: "#2A2D34",
+                      fontFamily: "var(--font-plus-jakarta)",
+                      fontSize: "15px",
+                      fontWeight: 600,
+                      letterSpacing: "0.02em",
+                    }}
+                    type="button"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+
+                {/* Divider */}
+                <div className="h-px bg-gray-100 mx-2 my-2" />
+
+                {/* Login Button */}
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    handleLoginClick();
+                  }}
+                  className="flex items-center justify-center px-4 py-3 rounded-xl transition-colors"
+                  style={{
+                    background: "#0000CC",
+                    color: "#ffffff",
+                    fontFamily: "var(--font-plus-jakarta)",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    letterSpacing: "0.03em",
+                  }}
+                  type="button"
+                >
+                  Login
+                </button>
+              </nav>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Global animation styles */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes header-fade-in {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes header-slide-down {
+              from {
+                opacity: 0;
+                transform: translateY(-12px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+            .header-fade-in {
+              animation: header-fade-in 0.2s ease-out;
+            }
+            .header-slide-down {
+              animation: header-slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+          `,
+        }}
+      />
     </div>
   );
 }
