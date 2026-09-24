@@ -7,12 +7,9 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { NavMain } from "@/components/nav-main";
 import { NavProjects } from "@/components/nav-projects";
-import { NavSecondary } from "@/components/nav-secondary";
-import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -24,8 +21,6 @@ import {
   ListOrdered,
   ChartColumn,
   Settings,
-  Bell,
-  CircleHelp,
   UserPlus,
   Play,
   ChartNoAxesCombined,
@@ -160,7 +155,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
-  // Cashier nav — Transactions removed
+  // Cashier nav
   const cashierNavMain = [
     {
       title: "Dashboard",
@@ -240,27 +235,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
-  const secondaryBase =
-    variant === "admin"
-      ? "/admin"
-      : variant === "student"
-        ? "/student"
-        : `/staff/${variant}`;
-
-  const navSecondary = [
-    {
-      title: "Notifications",
-      url: `${secondaryBase}/notifications`,
-      icon: Bell,
-    },
-    {
-      title: "Help & Support",
-      url: `${secondaryBase}/support`,
-      icon: CircleHelp,
-    },
-  ];
-
-  // Cashier projects — "All Transactions" removed
+  // Cashier projects
   const projectsByVariant = {
     admin: [
       { name: "Create Account", url: "/admin/users/create", icon: UserPlus },
@@ -323,22 +298,6 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
             ? deanNavMain
             : cashierNavMain;
 
-  const handleLogout = async () => {
-    const result = await logoutAction();
-    if (result.success) {
-      await update();
-      window.location.href = "/";
-    }
-  };
-
-  const userData = {
-    name: user?.name || roleDisplayName,
-    email: user?.email || "",
-    avatar: "",
-    role: roleDisplayName,
-    onLogout: handleLogout,
-  };
-
   return (
     <Sidebar
       collapsible="icon"
@@ -388,11 +347,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       <SidebarContent className="overflow-auto">
         <NavMain items={navMain} />
         <NavProjects projects={projects} />
-        <NavSecondary items={navSecondary} className="mt-auto pt-2 border-t" />
       </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={userData} />
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

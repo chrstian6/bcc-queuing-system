@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, LogOut, Settings, User } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { logoutAction } from "@/actions/auth";
 import { useRouter } from "next/navigation";
@@ -111,6 +111,11 @@ export function AdminHeader({ user }: AdminHeaderProps) {
     });
   }, [pathname]);
 
+  // Route to the correct settings page depending on who's logged in
+  const settingsHref = isAdmin
+    ? "/admin/settings"
+    : `/staff/${staffRole || "cashier"}/settings`;
+
   return (
     <header className="flex h-16 shrink-0 p-4 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 border-b">
       <div className="flex items-center gap-2 px-4 w-full justify-between">
@@ -146,11 +151,6 @@ export function AdminHeader({ user }: AdminHeaderProps) {
 
         {/* Right Section */}
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5 text-gray-600" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
-          </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 px-2">
@@ -186,12 +186,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                style={{ fontFamily: "var(--font-geist-sans)" }}
-              >
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem
+                onClick={() => router.push(settingsHref)}
                 style={{ fontFamily: "var(--font-geist-sans)" }}
               >
                 <Settings className="mr-2 h-4 w-4" />
