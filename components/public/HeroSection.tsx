@@ -38,25 +38,24 @@ interface HeroSectionProps {
   imagePath?: string;
 }
 
-// Three separate transaction lists for each department
+// ─── Department transactions ────────────────────────────────────────────────
+// Dean's Office transactions
 const DEAN_TRANSACTIONS = [
+  { id: "clearance", label: "Clearance" },
   { id: "grade-appeal", label: "Grade Appeal" },
   { id: "academic-concern", label: "Academic Concern" },
   { id: "course-approval", label: "Course Approval" },
-  { id: "student-discipline", label: "Student Discipline" },
-  { id: "faculty-concern", label: "Faculty Concern" },
-  { id: "curriculum-review", label: "Curriculum Review" },
-  { id: "academic-advisory", label: "Academic Advisory" },
 ];
 
+// Cashier transactions
 const CASHIER_TRANSACTIONS = [
-  { id: "tuition-payment", label: "Tuition Payment" },
-  { id: "miscellaneous-fee", label: "Miscellaneous Fee Payment" },
+  { id: "examination-payment", label: "Examination Payment" },
   { id: "document-payment", label: "Document Payment" },
-  { id: "other-school-fees", label: "Other School Fees" },
-  { id: "assessment", label: "Assessment" },
+  { id: "tuition-payment", label: "Tuition Payment" },
+  { id: "other-payment", label: "Other Payment" },
 ];
 
+// Registrar transactions
 const REGISTRAR_TRANSACTIONS = [
   { id: "certificate-enrollment", label: "Certificate of Enrollment" },
   { id: "transcript-records", label: "Transcript of Records" },
@@ -201,7 +200,7 @@ export default function HeroSection({
     message: string;
   } | null>(null);
 
-  // FIXED: Added polling every 15s so admin toggle reflects live
+  // Polling every 15s so admin toggle reflects live
   useEffect(() => {
     let cancelled = false;
 
@@ -210,7 +209,6 @@ export default function HeroSection({
         const { getQueueAvailability } = await import("@/actions/queue-status");
         const result = await getQueueAvailability();
         if (!cancelled && result.success) {
-          // Normalize: any non-open state → "closed" for the pill
           setQueueStatus({
             status:
               result.queueOpen && result.status === "open" ? "open" : "closed",
@@ -223,7 +221,6 @@ export default function HeroSection({
     };
 
     fetchStatus();
-    // Poll every 15 seconds
     const interval = setInterval(fetchStatus, 15000);
 
     return () => {
@@ -251,13 +248,13 @@ export default function HeroSection({
     <>
       <section
         ref={sectionRef}
-        className={`${plusJakarta.variable} ${geist.variable} ${fraunces.variable} relative overflow-hidden bg-white min-h-screen flex flex-col justify-center items-center`}
+        className={`${plusJakarta.variable} ${geist.variable} ${fraunces.variable} relative bg-white min-h-screen flex flex-col justify-center items-center`}
         style={{ marginBottom: 0, paddingBottom: 0 }}
       >
         {/* Mound */}
         <div
           ref={moundRef}
-          className="absolute bottom-0 left-0 right-0 pointer-events-none z-0"
+          className="absolute bottom-0 left-0 right-0 pointer-events-none z-0 overflow-hidden"
           style={{ height: "260px", marginBottom: 0 }}
         >
           <svg
@@ -329,7 +326,6 @@ export default function HeroSection({
             style={{
               animation: "fadeUp 0.6s ease forwards 0.3s",
               opacity: 0,
-              transform: "translateY(10px)",
             }}
           >
             <p
@@ -351,7 +347,6 @@ export default function HeroSection({
             style={{
               animation: "fadeUp 0.6s ease forwards 0.5s",
               opacity: 0,
-              transform: "translateY(10px)",
             }}
           >
             {/* Dean Dropdown */}
@@ -384,7 +379,13 @@ export default function HeroSection({
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  align="start"
+                  className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto z-[100]"
+                  style={{ pointerEvents: "auto" }}
+                >
                   {DEAN_TRANSACTIONS.map((item) => (
                     <SelectItem
                       key={item.id}
@@ -449,7 +450,13 @@ export default function HeroSection({
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  align="start"
+                  className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto z-[100]"
+                  style={{ pointerEvents: "auto" }}
+                >
                   {CASHIER_TRANSACTIONS.map((item) => (
                     <SelectItem
                       key={item.id}
@@ -517,7 +524,13 @@ export default function HeroSection({
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto">
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  align="start"
+                  className="rounded-xl border border-[#E5E7EB] shadow-xl max-h-[250px] overflow-y-auto z-[100]"
+                  style={{ pointerEvents: "auto" }}
+                >
                   {REGISTRAR_TRANSACTIONS.map((item) => (
                     <SelectItem
                       key={item.id}
@@ -568,7 +581,6 @@ export default function HeroSection({
                 style={{
                   animation: `fadeUp 0.6s ease forwards ${0.6 + index * 0.1}s`,
                   opacity: 0,
-                  transform: "translateY(10px)",
                 }}
               >
                 <p
@@ -593,7 +605,8 @@ export default function HeroSection({
 
         <style>{`
           @keyframes fadeUp {
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: none; }
           }
           @keyframes fadeIn {
             from { opacity: 0; transform: translateY(8px); }
