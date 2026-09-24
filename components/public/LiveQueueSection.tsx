@@ -1,10 +1,13 @@
 // components/public/LiveQueueSection.tsx
 "use client";
 
-import { Users, UserCheck } from "lucide-react";
+import { Users, UserCheck, Clock } from "lucide-react";
 import { useRealtimeQueue } from "@/hooks/useRealtimeQueue";
 
 const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
+
+// Average minutes per person in queue
+const MINUTES_PER_PERSON = 5;
 
 export default function LiveQueueSection() {
   const { departments, isConnected, lastUpdated } = useRealtimeQueue();
@@ -19,6 +22,18 @@ export default function LiveQueueSection() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  // Compute estimated wait: 5 min per person ahead of you in queue
+  const estimateWait = (waiting: number) => {
+    const total = waiting * MINUTES_PER_PERSON;
+    if (total <= 0) return "No wait";
+    if (total < 60) return `~${total} min`;
+
+    const hours = Math.floor(total / 60);
+    const mins = total % 60;
+    if (mins === 0) return `~${hours} hr`;
+    return `~${hours} hr ${mins} min`;
   };
 
   return (
@@ -76,7 +91,8 @@ export default function LiveQueueSection() {
                   >
                     {dept.displayName}
                   </h3>
-                  <div className="flex items-center gap-10">
+                  <div className="flex items-center gap-8 flex-wrap">
+                    {/* Serving */}
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-[#1B5A8C]/5 flex items-center justify-center flex-shrink-0">
                         <UserCheck className="w-5 h-5 text-[#1B5A8C]" />
@@ -105,7 +121,10 @@ export default function LiveQueueSection() {
                         )}
                       </div>
                     </div>
-                    <div className="w-px h-12 bg-gray-100" />
+
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
+
+                    {/* Waiting */}
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
                         <Users className="w-5 h-5 text-gray-400" />
@@ -125,6 +144,29 @@ export default function LiveQueueSection() {
                         </p>
                       </div>
                     </div>
+
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
+
+                    {/* Estimated wait */}
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
+                        <Clock className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p
+                          className="text-[11px] text-gray-400 uppercase tracking-wider mb-1"
+                          style={FONT}
+                        >
+                          Est. Wait
+                        </p>
+                        <p
+                          className="text-xl font-extrabold text-gray-900 tracking-tight"
+                          style={FONT}
+                        >
+                          {estimateWait(dept.waiting)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -138,9 +180,9 @@ export default function LiveQueueSection() {
                     className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-5"
                     style={FONT}
                   >
-                    Dean's Office
+                    Dean&apos;s Office
                   </h3>
-                  <div className="flex items-center gap-10">
+                  <div className="flex items-center gap-8 flex-wrap">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-[#1B5A8C]/5 flex items-center justify-center flex-shrink-0">
                         <UserCheck className="w-5 h-5 text-[#1B5A8C]" />
@@ -160,7 +202,7 @@ export default function LiveQueueSection() {
                         </p>
                       </div>
                     </div>
-                    <div className="w-px h-12 bg-gray-100" />
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
                         <Users className="w-5 h-5 text-gray-400" />
@@ -177,6 +219,26 @@ export default function LiveQueueSection() {
                           style={FONT}
                         >
                           0
+                        </p>
+                      </div>
+                    </div>
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
+                        <Clock className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p
+                          className="text-[11px] text-gray-400 uppercase tracking-wider mb-1"
+                          style={FONT}
+                        >
+                          Est. Wait
+                        </p>
+                        <p
+                          className="text-xl font-extrabold text-gray-900 tracking-tight"
+                          style={FONT}
+                        >
+                          No wait
                         </p>
                       </div>
                     </div>
@@ -191,7 +253,7 @@ export default function LiveQueueSection() {
                   >
                     Cashier
                   </h3>
-                  <div className="flex items-center gap-10">
+                  <div className="flex items-center gap-8 flex-wrap">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-[#1B5A8C]/5 flex items-center justify-center flex-shrink-0">
                         <UserCheck className="w-5 h-5 text-[#1B5A8C]" />
@@ -211,7 +273,7 @@ export default function LiveQueueSection() {
                         </p>
                       </div>
                     </div>
-                    <div className="w-px h-12 bg-gray-100" />
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
                         <Users className="w-5 h-5 text-gray-400" />
@@ -231,11 +293,39 @@ export default function LiveQueueSection() {
                         </p>
                       </div>
                     </div>
+                    <div className="w-px h-12 bg-gray-100 hidden sm:block" />
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
+                        <Clock className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <p
+                          className="text-[11px] text-gray-400 uppercase tracking-wider mb-1"
+                          style={FONT}
+                        >
+                          Est. Wait
+                        </p>
+                        <p
+                          className="text-xl font-extrabold text-gray-900 tracking-tight"
+                          style={FONT}
+                        >
+                          No wait
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </>
           )}
+        </div>
+
+        {/* Info footnote */}
+        <div className="px-6 md:px-10 pt-4 pb-2">
+          <p className="text-[11px] text-gray-400 italic" style={FONT}>
+            Estimated wait assumes ~{MINUTES_PER_PERSON} minutes per person
+            ahead of you. Actual times may vary.
+          </p>
         </div>
       </div>
     </div>

@@ -201,17 +201,34 @@ export default function HeroSection({
     message: string;
   } | null>(null);
 
+  // FIXED: Added polling every 15s so admin toggle reflects live
   useEffect(() => {
     let cancelled = false;
-    import("@/actions/queue-status").then(({ getQueueAvailability }) =>
-      getQueueAvailability().then((result) => {
+
+    const fetchStatus = async () => {
+      try {
+        const { getQueueAvailability } = await import("@/actions/queue-status");
+        const result = await getQueueAvailability();
         if (!cancelled && result.success) {
-          setQueueStatus({ status: result.status, message: result.message });
+          // Normalize: any non-open state → "closed" for the pill
+          setQueueStatus({
+            status:
+              result.queueOpen && result.status === "open" ? "open" : "closed",
+            message: result.message,
+          });
         }
-      }),
-    );
+      } catch (err) {
+        console.error("Failed to fetch queue status:", err);
+      }
+    };
+
+    fetchStatus();
+    // Poll every 15 seconds
+    const interval = setInterval(fetchStatus, 15000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 

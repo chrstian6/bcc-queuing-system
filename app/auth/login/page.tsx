@@ -31,7 +31,7 @@ const fraunces = Fraunces({
 
 // ─── Portals ─────────────────────────────────────────────────────────────────
 
-type Portal = "student" | "staff" | "admin";
+type Portal = "staff" | "admin";
 
 const PORTALS: {
   id: Portal;
@@ -42,16 +42,8 @@ const PORTALS: {
   fallbackRedirect: string;
 }[] = [
   {
-    id: "student",
-    label: "Student",
-    heading: "Student Portal",
-    subtitle: "Sign in to track your tickets and request documents",
-    emailPlaceholder: "student@bcc.edu.ph",
-    fallbackRedirect: "/student/dashboard",
-  },
-  {
     id: "staff",
-    label: "Staff",
+    label: "Registrar/Cashier/Dean",
     heading: "Staff Portal",
     subtitle: "Sign in to manage the queue and serve students",
     emailPlaceholder: "staff@bcc.edu.ph",
@@ -70,7 +62,7 @@ const PORTALS: {
 // ─── Login page ───────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
-  const [portal, setPortal] = useState<Portal>("student");
+  const [portal, setPortal] = useState<Portal>("staff");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -338,33 +330,18 @@ export default function LoginPage() {
                 )}
               </button>
 
-              {portal === "student" ? (
-                <p
-                  className="text-center text-sm text-[#64748B]"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
+              <p
+                className="text-center text-sm text-[#64748B]"
+                style={{ fontFamily: "var(--font-geist-sans)" }}
+              >
+                Need access?{" "}
+                <Link
+                  href="/contact"
+                  className="font-semibold text-[#0000CC] hover:underline"
                 >
-                  No account yet?{" "}
-                  <Link
-                    href="/auth/register"
-                    className="font-semibold text-[#0000CC] hover:underline"
-                  >
-                    Create one
-                  </Link>
-                </p>
-              ) : (
-                <p
-                  className="text-center text-sm text-[#64748B]"
-                  style={{ fontFamily: "var(--font-geist-sans)" }}
-                >
-                  Need access?{" "}
-                  <Link
-                    href="/contact"
-                    className="font-semibold text-[#0000CC] hover:underline"
-                  >
-                    Contact IT Department
-                  </Link>
-                </p>
-              )}
+                  Contact IT Department
+                </Link>
+              </p>
             </form>
           </div>
         </div>

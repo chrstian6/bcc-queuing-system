@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, Clock } from "lucide-react";
 import { formatHHMM } from "@/lib/time";
 
 const POLL_MS = 10000;
@@ -76,29 +76,136 @@ export function QueueMonitor() {
   };
 
   const openCount = counters.filter((c) => c.state === "open").length;
+  const outsideHoursCount = counters.filter(
+    (c) => c.state === "outside-hours",
+  ).length;
+  const breakCount = counters.filter((c) => c.state === "break").length;
+  const fullCount = counters.filter((c) => c.state === "full").length;
+  const closedCount = counters.filter((c) => c.state === "closed").length;
+
+  // Effective status: the admin toggle AND whether any counter is actually open
+  const allOutsideHours =
+    counters.length > 0 && outsideHoursCount === counters.length;
+  const allOnBreak = counters.length > 0 && breakCount === counters.length;
+  const allFull = counters.length > 0 && fullCount === counters.length;
+  const allClosed = counters.length > 0 && closedCount === counters.length;
+
+  // Effective queue status for the badge
+  const effectiveStatus: {
+    label: string;
+    className: string;
+    dot: string;
+  } = (() => {
+    if (!queueOpen) {
+      return {
+        label: "Closed",
+        className: "bg-red-100 text-red-700",
+        dot: "bg-red-500",
+      };
+    }
+    if (counters.length === 0) {
+      return {
+        label: "No Counters",
+        className: "bg-gray-100 text-gray-700",
+        dot: "bg-gray-400",
+      };
+    }
+    if (openCount > 0) {
+      return {
+        label: "Open",
+        className: "bg-green-100 text-green-700",
+        dot: "bg-green-500",
+      };
+    }
+    if (allOutsideHours) {
+      return {
+        label: "Outside Hours",
+        className: "bg-amber-100 text-amber-700",
+        dot: "bg-amber-500",
+      };
+    }
+    if (allOnBreak) {
+      return {
+        label: "On Break",
+        className: "bg-amber-100 text-amber-700",
+        dot: "bg-amber-500",
+      };
+    }
+    if (allFull) {
+      return {
+        label: "Full",
+        className: "bg-red-100 text-red-700",
+        dot: "bg-red-500",
+      };
+    }
+    if (allClosed) {
+      return {
+        label: "All Closed",
+        className: "bg-red-100 text-red-700",
+        dot: "bg-red-500",
+      };
+    }
+    // Partial: some open, some not
+    return {
+      label: "Partial",
+      className: "bg-blue-100 text-blue-700",
+      dot: "bg-blue-500",
+    };
+  })();
+
+  // Subtitle explaining the situation
+  const subtitle = (() => {
+    if (!queueOpen) {
+      return "Master switch is OFF — no tickets accepted regardless of counter state";
+    }
+    if (counters.length === 0) {
+      return "No active cashier counters configured";
+    }
+    if (openCount > 0) {
+      return `${openCount} of ${counters.length} counters accepting tickets`;
+    }
+    if (allOutsideHours) {
+      return `All counters are outside operating hours — queue auto-paused until they reopen`;
+    }
+    if (allOnBreak) {
+      return `All counters are on break — queue auto-paused`;
+    }
+    if (allFull) {
+      return `All counters have reached their daily capacity`;
+    }
+    if (allClosed) {
+      return `All counters are manually closed by their staff`;
+    }
+    return `${counters.length - openCount} of ${counters.length} counters unavailable`;
+  })();
 
   return (
     <div className="space-y-5 font-['Plus_Jakarta_Sans']">
       {/* Global control */}
       <div className="rounded-xl bg-white border border-gray-200 p-5 flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold text-gray-900">
               Global Queue
             </h2>
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                queueOpen
-                  ? "bg-green-100 text-green-700"
-                  : "bg-red-100 text-red-700"
-              }`}
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${effectiveStatus.className}`}
             >
-              {queueOpen ? "Open" : "Closed"}
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${effectiveStatus.dot} ${
+                  effectiveStatus.label === "Open" ? "animate-pulse" : ""
+                }`}
+              />
+              {effectiveStatus.label}
             </span>
+            {queueOpen && allOutsideHours && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                <Clock className="w-3 h-3" />
+                Auto-resumes during hours
+              </span>
+            )}
           </div>
-          <p className="text-sm text-gray-500 mt-1">
-            {openCount} of {counters.length} counters accepting tickets
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -211,8 +318,8 @@ export function QueueMonitor() {
             </DialogTitle>
             <DialogDescription>
               {pendingToggle
-                ? "Students will be able to get cashier tickets again."
-                : "This stops all new cashier tickets across every counter until reopened."}
+                ? "Students will be able to get tickets whenever a counter is open during its hours."
+                : "This stops all new tickets across every counter until you reopen it. Counters already outside hours or on break remain unaffected — this is the master override."}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">

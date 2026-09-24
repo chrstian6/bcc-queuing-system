@@ -27,6 +27,7 @@ import {
 import type { TorFormData } from "@/components/public/TranscriptOfRecordsForm";
 
 const ACTIVE_STATUSES = ["pending", "processing", "ready-for-pickup"];
+const SMS_STATUSES = ["released", "rejected"];
 
 interface DocumentRequestResponse {
   success: boolean;
@@ -47,6 +48,7 @@ function revalidateDocumentPaths() {
 
 /**
  * Create a document request (requires student session)
+ * EMAIL ONLY — no SMS on submission.
  */
 export async function createDocumentRequest(data: {
   documentType: string;
@@ -93,7 +95,6 @@ export async function createDocumentRequest(data: {
 
     await connectDB();
 
-    // Cap concurrent active requests per student
     const activeCount = await DocumentRequest.countDocuments({
       userId: session.user.id,
       status: { $in: ACTIVE_STATUSES },
@@ -105,7 +106,6 @@ export async function createDocumentRequest(data: {
       };
     }
 
-    // Snapshot the student profile server-side
     const user = await User.findById(session.user.id).lean();
     if (!user || !user.schoolId) {
       return { success: false, error: STALE_SESSION_ERROR };
@@ -116,7 +116,6 @@ export async function createDocumentRequest(data: {
       async () => {
         const { start: today, dateStr } = getAppDayRange();
 
-        // Daily sequential request number: DR-YYYYMMDD-0001
         const counter = await Counter.findOneAndUpdate(
           { _id: `DOCREQ-${dateStr}` },
           { $inc: { seq: 1 }, $setOnInsert: { date: today } },
@@ -153,7 +152,7 @@ export async function createDocumentRequest(data: {
         const documentTypeLabel =
           DOCUMENT_TYPE_LABELS[input.documentType as DocumentType];
 
-        // Send email notification
+        // Email only — no SMS on submission
         sendDocumentRequestEmail({
           email: user.email,
           studentName,
@@ -163,20 +162,6 @@ export async function createDocumentRequest(data: {
           purpose: input.purpose,
           notificationType: "submitted",
         }).catch((err) => console.error("Document request email failed:", err));
-
-        // Send SMS notification
-        if (user.contactNumber) {
-          console.log("SMS: Sending submission SMS to:", user.contactNumber);
-          sendDocumentRequestSMS(
-            user.contactNumber,
-            studentName,
-            requestId,
-            documentTypeLabel,
-            "submitted",
-          ).catch((err) => console.error("Document request SMS failed:", err));
-        } else {
-          console.log("SMS: No contact number for user:", user.email);
-        }
 
         revalidateDocumentPaths();
 
@@ -205,7 +190,8 @@ export async function createDocumentRequest(data: {
 }
 
 /**
- * Create a public TOR request (no session required - for landing page)
+ * Create a public TOR request (no session required — landing page).
+ * EMAIL ONLY — no SMS on submission.
  */
 export async function createPublicTorRequest(
   torData: TorFormData,
@@ -216,7 +202,6 @@ export async function createPublicTorRequest(
       return { success: false, error: "Missing request identifier" };
     }
 
-    // Build purpose string from TOR data
     const purposes: string[] = [];
     if (torData.purpose.employment) {
       purposes.push(`Employment (${torData.purpose.employmentScope})`);
@@ -300,24 +285,7 @@ export async function createPublicTorRequest(
 
         await request.save();
 
-        // Send SMS notification for public TOR request
-        if (torData.student.contactNo) {
-          const studentName =
-            `${torData.student.firstName} ${torData.student.lastName}`.trim();
-          console.log(
-            "SMS: Sending TOR submission SMS to:",
-            torData.student.contactNo,
-          );
-          sendDocumentRequestSMS(
-            torData.student.contactNo,
-            studentName,
-            requestId,
-            "Transcript of Records",
-            "submitted",
-          ).catch((err) => console.error("TOR request SMS failed:", err));
-        } else {
-          console.log("SMS: No contact number provided in TOR form");
-        }
+        // No SMS on submission — email/SMS only fire on release or rejection
 
         revalidateDocumentPaths();
 
@@ -367,7 +335,7 @@ export async function getMyDocumentRequests() {
 }
 
 /**
- * Get registrar requests (requires admin or registrar role)
+ * Get registrar requests
  */
 export async function getRegistrarRequests(filters?: {
   status?: string;
@@ -406,7 +374,7 @@ export async function getRegistrarRequests(filters?: {
 }
 
 /**
- * Get registrar request stats (requires admin or registrar role)
+ * Get registrar request stats
  */
 export async function getRegistrarRequestStats() {
   try {
@@ -451,7 +419,6 @@ export async function getRegistrarRequestStats() {
 
 type ProcessAction = "start-processing" | "mark-ready" | "release" | "reject";
 
-// Transition map: guard status(es) → next status
 const TRANSITIONS: Record<
   ProcessAction,
   { from: string[]; to: string; dateField?: string }
@@ -475,8 +442,8 @@ const TRANSITIONS: Record<
 };
 
 /**
- * Process document request (requires admin or registrar role)
- * Sends SMS notification to the student's contact number
+ * Process document request.
+ * SMS fires ONLY for statuses in SMS_STATUSES (released, rejected).
  */
 export async function processDocumentRequest(
   requestId: string,
@@ -510,17 +477,12 @@ export async function processDocumentRequest(
 
     await connectDB();
 
-    // First check if the request exists
     const existingDoc = await DocumentRequest.findOne({ requestId }).lean();
 
     if (!existingDoc) {
-      return {
-        success: false,
-        error: "Request not found",
-      };
+      return { success: false, error: "Request not found" };
     }
 
-    // Check if status is in allowed transition
     if (!transition.from.includes(existingDoc.status)) {
       return {
         success: false,
@@ -528,7 +490,6 @@ export async function processDocumentRequest(
       };
     }
 
-    // Build update object
     const updateFields: any = {
       status: transition.to,
       processedBy: changedBy,
@@ -551,7 +512,6 @@ export async function processDocumentRequest(
       updateFields[transition.dateField] = new Date();
     }
 
-    // Use findOneAndUpdate with regular update object
     const updated = await DocumentRequest.findOneAndUpdate(
       { requestId, status: { $in: transition.from } },
       { $set: updateFields },
@@ -572,23 +532,10 @@ export async function processDocumentRequest(
       DOCUMENT_TYPE_LABELS[doc.documentType as DocumentType] ||
       doc.documentType;
 
-    // Get contact number from student info or TOR details
     const contactNumber =
       doc.student?.contactNumber || doc.torDetails?.student?.contactNo || "";
 
-    console.log("=== SMS Notification Debug ===");
-    console.log("Request ID:", doc.requestId);
-    console.log("Student Name:", studentName);
-    console.log("Contact Number from student:", doc.student?.contactNumber);
-    console.log(
-      "Contact Number from TOR details:",
-      doc.torDetails?.student?.contactNo,
-    );
-    console.log("Final Contact Number:", contactNumber);
-    console.log("Status:", transition.to);
-    console.log("==============================");
-
-    // Send email notification if email exists
+    // Email — fires for every status change
     if (doc.student?.email) {
       sendDocumentRequestEmail({
         email: doc.student.email,
@@ -605,9 +552,12 @@ export async function processDocumentRequest(
       }).catch((err) => console.error("Document status email failed:", err));
     }
 
-    // Send SMS notification if contact number exists
-    if (contactNumber) {
-      console.log("Sending SMS notification to:", contactNumber);
+    // SMS — ONLY for released and rejected
+    if (contactNumber && SMS_STATUSES.includes(transition.to)) {
+      console.log(
+        `Sending SMS for status "${transition.to}" to:`,
+        contactNumber,
+      );
       sendDocumentRequestSMS(
         contactNumber,
         studentName,
@@ -617,7 +567,9 @@ export async function processDocumentRequest(
         trimmedRemarks || undefined,
       ).catch((err) => console.error("Document status SMS failed:", err));
     } else {
-      console.log("No contact number found. SMS notification skipped.");
+      console.log(
+        `SMS skipped for status "${transition.to}" (SMS only for released / rejected)`,
+      );
     }
 
     revalidateDocumentPaths();

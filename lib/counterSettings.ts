@@ -1,8 +1,4 @@
 // lib/counterSettings.ts
-// Shared counter-availability logic. Distribution, the public status action,
-// the SSE stream, and the admin monitor must all agree on what "open" means —
-// they all go through evaluateCounterState().
-
 import type { ICounterSettings } from "@/models/Staff";
 import { getAppNowMinutes, hhmmToMinutes } from "./time";
 
@@ -15,8 +11,8 @@ export const DEFAULT_COUNTER_SETTINGS: ICounterSettings = {
 };
 
 /**
- * Normalize a (possibly missing/partial) counterSettings subdoc. Older Staff
- * docs predate the field, and .lean() reads skip schema defaults.
+ * Normalize a (possibly missing/partial) counterSettings subdoc.
+ * Older Staff docs predate the field, and .lean() reads skip schema defaults.
  */
 export function getEffectiveCounterSettings(
   staff: { counterSettings?: Partial<ICounterSettings> | null } | null,
@@ -40,24 +36,20 @@ export function getEffectiveCounterSettings(
 
 export type CounterState =
   | "open"
-  | "closed" // manually closed by the cashier
+  | "closed"
   | "outside-hours"
   | "break"
-  | "full"; // daily limit reached
+  | "full";
 
 export interface CounterEvaluation {
   state: CounterState;
   settings: ICounterSettings;
-  /** true when the counter can accept a new ticket right now */
   accepting: boolean;
-  /** label of the active break, when state === "break" */
   activeBreakLabel?: string;
 }
 
 /**
- * Evaluate one counter. `load` is the number of tickets already assigned
- * today (the per-staff Counter seq). Precedence: manual close > hours >
- * break > capacity.
+ * Evaluate one counter. Precedence: manual close > hours > break > capacity.
  */
 export function evaluateCounterState(
   staff: { counterSettings?: Partial<ICounterSettings> | null } | null,
@@ -98,15 +90,10 @@ export function evaluateCounterState(
 
 export type QueueAvailabilityStatus =
   | "open"
-  | "closed" // globally closed by admin, or no counters accepting
+  | "closed"
   | "outside-hours"
   | "full";
 
-/**
- * Roll individual counter states up into one department-level status.
- * Reason priority when nothing is accepting: outside-hours (all) >
- * full (some at capacity, rest unavailable) > closed.
- */
 export function summarizeAvailability(
   queueOpen: boolean,
   counterStates: CounterState[],
