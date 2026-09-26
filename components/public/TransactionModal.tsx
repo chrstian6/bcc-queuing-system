@@ -21,6 +21,7 @@ import {
   getCampusForYearLevel,
 } from "@/types/ticket";
 import { createTicket } from "@/actions/ticket";
+import { createPublicDocumentRequest } from "@/actions/documentRequest";
 import {
   getQueueAvailability,
   type QueueAvailability,
@@ -57,46 +58,74 @@ interface GuardianInfo {
 
 const SUFFIXES = ["", "Jr.", "Sr.", "II", "III", "IV", "V"];
 
-const ALL_TRANSACTIONS: Record<string, { label: string; department: string }> =
-  {
-    // Dean
-    "grade-appeal": { label: "Grade Appeal", department: "dean" },
-    "academic-concern": { label: "Academic Concern", department: "dean" },
-    "course-approval": { label: "Course Approval", department: "dean" },
-    "student-discipline": { label: "Student Discipline", department: "dean" },
-    "faculty-concern": { label: "Faculty Concern", department: "dean" },
-    "curriculum-review": { label: "Curriculum Review", department: "dean" },
-    "academic-advisory": { label: "Academic Advisory", department: "dean" },
-    // Cashier
-    "tuition-payment": { label: "Tuition Payment", department: "cashier" },
-    "miscellaneous-fee": {
-      label: "Miscellaneous Fee Payment",
-      department: "cashier",
-    },
-    "document-payment": { label: "Document Payment", department: "cashier" },
-    "other-school-fees": { label: "Other School Fees", department: "cashier" },
-    assessment: { label: "Assessment", department: "cashier" },
-    // Registrar
-    "certificate-enrollment": {
-      label: "Certificate of Enrollment",
-      department: "registrar",
-    },
-    "transcript-records": {
-      label: "Transcript of Records",
-      department: "registrar",
-    },
-    "request-grades": { label: "Request for Grades", department: "registrar" },
-    "request-assessment": {
-      label: "Request for Assessment",
-      department: "registrar",
-    },
-    "good-moral": { label: "Good Moral Certificate", department: "registrar" },
-    diploma: { label: "Diploma", department: "registrar" },
-    "other-document": {
-      label: "Other Document Request",
-      department: "registrar",
-    },
-  };
+const ALL_TRANSACTIONS: Record<
+  string,
+  { label: string; department: string; documentType?: string }
+> = {
+  // Dean
+  "grade-appeal": { label: "Grade Appeal", department: "dean" },
+  "academic-concern": { label: "Academic Concern", department: "dean" },
+  "course-approval": { label: "Course Approval", department: "dean" },
+  "student-discipline": { label: "Student Discipline", department: "dean" },
+  "faculty-concern": { label: "Faculty Concern", department: "dean" },
+  "curriculum-review": { label: "Curriculum Review", department: "dean" },
+  "academic-advisory": { label: "Academic Advisory", department: "dean" },
+  // Cashier
+  "tuition-payment": { label: "Tuition Payment", department: "cashier" },
+  "miscellaneous-fee": {
+    label: "Miscellaneous Fee Payment",
+    department: "cashier",
+  },
+  "document-payment": { label: "Document Payment", department: "cashier" },
+  "other-school-fees": { label: "Other School Fees", department: "cashier" },
+  assessment: { label: "Assessment", department: "cashier" },
+  // Registrar — mapped to DocumentRequest.documentType
+  "certificate-enrollment": {
+    label: "Certificate of Enrollment",
+    department: "registrar",
+    documentType: "certificate-enrollment",
+  },
+  "transcript-records": {
+    label: "Transcript of Records",
+    department: "registrar",
+    documentType: "tor",
+  },
+  tor: {
+    label: "Transcript of Records",
+    department: "registrar",
+    documentType: "tor",
+  },
+  "request-grades": {
+    label: "Request for Grades",
+    department: "registrar",
+    documentType: "request-grades",
+  },
+  "request-assessment": {
+    label: "Request for Assessment",
+    department: "registrar",
+    documentType: "request-assessment",
+  },
+  "good-moral": {
+    label: "Good Moral Certificate",
+    department: "registrar",
+    documentType: "good-moral",
+  },
+  diploma: {
+    label: "Diploma",
+    department: "registrar",
+    documentType: "diploma",
+  },
+  "other-document": {
+    label: "Other Document Request",
+    department: "registrar",
+    documentType: "other",
+  },
+  other: {
+    label: "Other Document Request",
+    department: "registrar",
+    documentType: "other",
+  },
+};
 
 function getTransactionLabel(type: string): string {
   return (
@@ -261,6 +290,9 @@ export default function TransactionModal({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Determines whether this modal submits to Ticket (queue) or DocumentRequest
+  const isRegistrarFlow = department === "registrar";
+
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -279,14 +311,13 @@ export default function TransactionModal({
       document.body.style.width = "100%";
       document.body.style.top = `-${window.scrollY}px`;
 
-      // Check if this is a TOR request
+      // TOR: full dedicated modal (existing flow)
       if (
         initialTransaction === "transcript-records" &&
         department === "registrar"
       ) {
         setShowTorModal(true);
         setSelectedTransaction(initialTransaction);
-        // Don't set up regular form for TOR
       } else if (initialTransaction) {
         setShowTorModal(false);
         setSelectedTransaction(initialTransaction);
@@ -484,6 +515,12 @@ export default function TransactionModal({
         newErrors.amount = "Amount cannot exceed 12 digits";
     }
 
+    // Registrar "other" needs a description
+    if (isRegistrarFlow && selectedTransaction === "other-document") {
+      if (!specifyTransaction.trim())
+        newErrors.specifyTransaction = "Please describe the document";
+    }
+
     if (specifyTransaction.trim() && specifyTransaction.length > 200)
       newErrors.specifyTransaction =
         "Description must be 200 characters or less";
@@ -511,7 +548,57 @@ export default function TransactionModal({
     try {
       const idempotencyKey = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
-      // Always provide a number for amount (0 for non-cashier)
+      // ─── REGISTRAR: submit to DocumentRequest (public, no auth) ─────────
+      if (isRegistrarFlow) {
+        const meta = ALL_TRANSACTIONS[selectedTransaction!];
+        const docType = meta?.documentType || selectedTransaction!;
+
+        const purposeString = `${meta?.label || "Document"} request`;
+
+        // Prefer guardian contact if checked, else student's
+        const publicEmail = isGuardian
+          ? guardianInfo.email.trim()
+          : studentInfo.email.trim();
+        const publicContact = isGuardian
+          ? guardianInfo.contactNumber.replace(/\s/g, "")
+          : studentInfo.contactNumber.replace(/\s/g, "");
+
+        const result = await createPublicDocumentRequest(
+          {
+            documentType: docType,
+            otherDescription:
+              docType === "other" ? specifyTransaction.trim() : "",
+            purpose: purposeString,
+            copies: 1,
+            student: {
+              firstName: studentInfo.firstName.trim(),
+              lastName: studentInfo.lastName.trim(),
+              middleName: studentInfo.middleName.trim(),
+              email: publicEmail,
+              contactNumber: publicContact,
+            },
+          },
+          idempotencyKey,
+        );
+
+        if (result.success && result.request) {
+          setTicketData({
+            ticketNumber: result.request.requestId || "—",
+            ticketId: result.request._id || "—",
+          });
+          setBlueState("gone");
+          setStep(3);
+        } else {
+          setStep(1);
+          setBlueState("gone");
+          setSubmitError(
+            result.error || "Failed to submit request. Please try again.",
+          );
+        }
+        return;
+      }
+
+      // ─── DEAN / CASHIER: submit to Ticket (queue) ───────────────────────
       const ticketAmount =
         department === "cashier"
           ? parseFloat(amount.replace(/,/g, "") || "0")
@@ -521,7 +608,7 @@ export default function TransactionModal({
         transactionType: selectedTransaction!,
         transactionDescription: specifyTransaction.trim() || undefined,
         amount: ticketAmount,
-        department: department || "cashier", // ADD department here
+        department: department || "cashier",
         student: {
           schoolId: studentInfo.schoolId.trim() || "",
           firstName: sanitizeInput(studentInfo.firstName),
@@ -565,7 +652,7 @@ export default function TransactionModal({
         );
       }
     } catch (error) {
-      console.error("Error submitting ticket:", error);
+      console.error("Error submitting:", error);
       setStep(1);
       setBlueState("gone");
       setSubmitError("An unexpected error occurred. Please try again.");
@@ -618,14 +705,20 @@ export default function TransactionModal({
                         className="text-white text-base font-semibold leading-tight"
                         style={{ fontFamily: "var(--font-plus-jakarta)" }}
                       >
-                        {step === 2 ? "Processing Your Ticket" : selectedLabel}
+                        {step === 2
+                          ? isRegistrarFlow
+                            ? "Submitting Request"
+                            : "Processing Your Ticket"
+                          : selectedLabel}
                       </p>
                       <p
                         className="text-white/60 text-[13px] leading-relaxed"
                         style={{ fontFamily: "var(--font-geist-sans)" }}
                       >
                         {step === 2
-                          ? "Please wait while we generate your ticket number"
+                          ? isRegistrarFlow
+                            ? "Please wait while we save your document request"
+                            : "Please wait while we generate your ticket number"
                           : "Preparing your form..."}
                       </p>
                       {step === 2 && (
@@ -664,7 +757,11 @@ export default function TransactionModal({
                         className="text-[20px] font-extrabold text-[#0F172A] leading-tight"
                         style={{ fontFamily: "var(--font-plus-jakarta)" }}
                       >
-                        {step === 3 ? "All set!" : "Student Details"}
+                        {step === 3
+                          ? isRegistrarFlow
+                            ? "Request Submitted"
+                            : "All set!"
+                          : "Student Details"}
                       </h2>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#0000CC] flex-shrink-0" />
@@ -696,7 +793,9 @@ export default function TransactionModal({
                       </p>
                     </div>
                   )}
-                  {availability &&
+                  {/* Queue availability only matters for queue flows */}
+                  {!isRegistrarFlow &&
+                    availability &&
                     availability.status !== "open" &&
                     step === 1 && (
                       <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-2.5">
@@ -886,7 +985,7 @@ export default function TransactionModal({
                             </Field>
                           </div>
 
-                          {/* Amount - only for cashier */}
+                          {/* Amount — cashier only */}
                           {department === "cashier" && (
                             <Field
                               label="Amount to Pay (₱)"
@@ -909,9 +1008,17 @@ export default function TransactionModal({
                             </Field>
                           )}
 
-                          {selectedTransaction === "other-school-fees" && (
+                          {/* Description — cashier "other-school-fees" OR registrar "other-document" */}
+                          {(selectedTransaction === "other-school-fees" ||
+                            (isRegistrarFlow &&
+                              selectedTransaction === "other-document")) && (
                             <Field
-                              label="Specify transaction (optional)"
+                              label={
+                                isRegistrarFlow
+                                  ? "Which document?"
+                                  : "Specify transaction (optional)"
+                              }
+                              required={isRegistrarFlow}
                               error={errors.specifyTransaction}
                             >
                               <Textarea
@@ -923,7 +1030,11 @@ export default function TransactionModal({
                                   setSpecifyTransaction(sanitized);
                                   clearErr("specifyTransaction");
                                 }}
-                                placeholder="e.g., Graduation fee, Field trip payment..."
+                                placeholder={
+                                  isRegistrarFlow
+                                    ? "e.g., Good Moral Certificate"
+                                    : "e.g., Graduation fee, Field trip payment..."
+                                }
                                 rows={2}
                                 maxLength={200}
                                 className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] resize-none text-[14px]"
@@ -1173,28 +1284,30 @@ export default function TransactionModal({
                           <CheckCircle2 className="w-7 h-7 text-[#0000CC]" />
                         </div>
 
-                        {amount && department === "cashier" && (
-                          <div className="mb-4">
-                            <p
-                              className="text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wide mb-1"
-                              style={{ fontFamily: "var(--font-geist-sans)" }}
-                            >
-                              Amount to Pay
-                            </p>
-                            <p
-                              className="text-[24px] font-bold text-[#0000CC]"
-                              style={{ fontFamily: "var(--font-geist-sans)" }}
-                            >
-                              ₱{amount}
-                            </p>
-                            <p
-                              className="text-[12px] text-[#94A3B8] mt-1"
-                              style={{ fontFamily: "var(--font-geist-sans)" }}
-                            >
-                              Please bring the exact amount
-                            </p>
-                          </div>
-                        )}
+                        {amount &&
+                          department === "cashier" &&
+                          !isRegistrarFlow && (
+                            <div className="mb-4">
+                              <p
+                                className="text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wide mb-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
+                                Amount to Pay
+                              </p>
+                              <p
+                                className="text-[24px] font-bold text-[#0000CC]"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
+                                ₱{amount}
+                              </p>
+                              <p
+                                className="text-[12px] text-[#94A3B8] mt-1"
+                                style={{ fontFamily: "var(--font-geist-sans)" }}
+                              >
+                                Please bring the exact amount
+                              </p>
+                            </div>
+                          )}
 
                         <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4">
                           <div className="bg-[#0000CC] px-6 py-2">
@@ -1202,7 +1315,9 @@ export default function TransactionModal({
                               className="text-[10px] font-bold uppercase tracking-widest text-white/70"
                               style={{ fontFamily: "var(--font-geist-sans)" }}
                             >
-                              Your Ticket Number
+                              {isRegistrarFlow
+                                ? "Your Request ID"
+                                : "Your Ticket Number"}
                             </p>
                           </div>
                           <div className="py-5">
@@ -1285,13 +1400,13 @@ export default function TransactionModal({
                             className="text-[13px] text-[#475569] leading-relaxed"
                             style={{ fontFamily: "var(--font-geist-sans)" }}
                           >
-                            It's okay to close this — we've sent your ticket
-                            number
-                            {hasEmail && " to your email"}
-                            {hasEmail && hasPhone && " and"}
-                            {hasPhone && " via text"}
-                            {!hasEmail && !hasPhone && " for your reference"}.
-                            We'll notify you when it's your turn.
+                            {isRegistrarFlow
+                              ? `It's okay to close this — your document request has been submitted to the Registrar's Office. We'll notify you when it's ready for pickup.`
+                              : `It's okay to close this — we've sent your ticket number${
+                                  hasEmail ? " to your email" : ""
+                                }${hasEmail && hasPhone ? " and" : ""}${
+                                  hasPhone ? " via text" : ""
+                                }. We'll notify you when it's your turn.`}
                           </p>
                         </div>
 
@@ -1308,7 +1423,7 @@ export default function TransactionModal({
                             onClick={resetForm}
                             className="flex-1 py-2.5 border border-[#E2E8F0] text-[#475569] text-[13px] font-medium rounded-xl hover:bg-[#F8FAFC] transition-colors"
                           >
-                            New ticket
+                            {isRegistrarFlow ? "New request" : "New ticket"}
                           </button>
                         </div>
                       </div>
@@ -1323,17 +1438,23 @@ export default function TransactionModal({
                       form="transaction-form"
                       disabled={
                         isSubmitting ||
-                        (availability !== null &&
+                        (!isRegistrarFlow &&
+                          availability !== null &&
                           availability.status !== "open")
                       }
                       className="w-full py-3 text-[14px] font-semibold text-white rounded-xl bg-[#0000CC] hover:bg-[#000099] transition-colors disabled:opacity-50"
                     >
                       {isSubmitting
-                        ? "Processing…"
-                        : availability !== null &&
+                        ? isRegistrarFlow
+                          ? "Submitting…"
+                          : "Processing…"
+                        : !isRegistrarFlow &&
+                            availability !== null &&
                             availability.status !== "open"
                           ? "Queue Unavailable"
-                          : "Get My Ticket"}
+                          : isRegistrarFlow
+                            ? "Submit Request"
+                            : "Get My Ticket"}
                     </button>
                   </div>
                 )}

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import Link from "next/link";
 import {
   UserPlus,
   Users,
@@ -23,13 +23,15 @@ import {
   Shield,
   Mail,
   Calendar,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
   Eye,
+  Pencil,
+  Ban,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import connectDB from "@/lib/mongodb";
 import Staff from "@/models/Staff";
+import { StaffStatusControls } from "@/components/admin/StaffStatusControls";
 
 export default async function StaffAccountsPage() {
   const { success, session } = await getSession();
@@ -42,6 +44,8 @@ export default async function StaffAccountsPage() {
   let registrarCount = 0;
   let cashierCount = 0;
   let activeCount = 0;
+  let inactiveCount = 0;
+  let suspendedCount = 0;
 
   try {
     await connectDB();
@@ -60,6 +64,12 @@ export default async function StaffAccountsPage() {
       (s: any) => s.roleName === "cashier",
     ).length;
     activeCount = staffMembers.filter((s: any) => s.status === "active").length;
+    inactiveCount = staffMembers.filter(
+      (s: any) => s.status === "inactive",
+    ).length;
+    suspendedCount = staffMembers.filter(
+      (s: any) => s.status === "suspended",
+    ).length;
   } catch (error) {
     console.error("Error fetching staff:", error);
   }
@@ -74,7 +84,7 @@ export default async function StaffAccountsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Staff Accounts</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage registrar and cashier staff accounts
+            Manage staff accounts — activate, deactivate, or suspend
           </p>
         </div>
         <Button asChild className="bg-[#1B5A8C] hover:bg-[#0B3B5F]">
@@ -100,34 +110,34 @@ export default async function StaffAccountsPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{registrarCount}</p>
-              <p className="text-xs text-muted-foreground">Registrar Staff</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <Banknote className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{cashierCount}</p>
-              <p className="text-xs text-muted-foreground">Cashier Staff</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Shield className="w-5 h-5 text-purple-600" />
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
             </div>
             <div>
               <p className="text-2xl font-bold">{activeCount}</p>
-              <p className="text-xs text-muted-foreground">Active Staff</p>
+              <p className="text-xs text-muted-foreground">Active</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+              <Ban className="w-5 h-5 text-gray-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{inactiveCount}</p>
+              <p className="text-xs text-muted-foreground">Inactive</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{suspendedCount}</p>
+              <p className="text-xs text-muted-foreground">Suspended</p>
             </div>
           </CardContent>
         </Card>
@@ -241,6 +251,14 @@ export default async function StaffAccountsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* Status controls — client component */}
+                          <StaffStatusControls
+                            staffId={staff.staffId}
+                            staffName={`${staff.firstName} ${staff.lastName}`}
+                            currentStatus={staff.status}
+                            isSelf={staff.staffId === session.user?.staffId}
+                          />
+
                           <Button variant="ghost" size="sm" asChild>
                             <Link href={`/admin/users/staff/${staff.staffId}`}>
                               <Eye className="w-4 h-4" />
@@ -312,7 +330,9 @@ export default async function StaffAccountsPage() {
                         className={
                           staff.status === "active"
                             ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-700"
+                            : staff.status === "inactive"
+                              ? "bg-gray-100 text-gray-700"
+                              : "bg-red-100 text-red-700"
                         }
                       >
                         {staff.status}
@@ -366,7 +386,9 @@ export default async function StaffAccountsPage() {
                         className={
                           staff.status === "active"
                             ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-700"
+                            : staff.status === "inactive"
+                              ? "bg-gray-100 text-gray-700"
+                              : "bg-red-100 text-red-700"
                         }
                       >
                         {staff.status}

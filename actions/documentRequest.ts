@@ -190,6 +190,171 @@ export async function createDocumentRequest(data: {
 }
 
 /**
+ * Create a PUBLIC document request (no session required — landing page).
+ * Used when a guest picks a document from the Registrar dropdown.
+ * EMAIL ONLY — no SMS on submission.
+ */
+export async function createPublicDocumentRequest(
+  data: {
+    documentType: string;
+    otherDescription?: string;
+    purpose: string;
+    copies: number;
+    student?: {
+      firstName?: string;
+      lastName?: string;
+      middleName?: string;
+      email?: string;
+      contactNumber?: string;
+    };
+  },
+  idempotencyKey: string,
+): Promise<DocumentRequestResponse> {
+  try {
+    if (!idempotencyKey) {
+      return { success: false, error: "Missing request identifier" };
+    }
+
+    if (!data.documentType) {
+      return { success: false, error: "Document type is required" };
+    }
+
+    const purpose = (data.purpose || "").trim();
+    if (purpose.length < 5) {
+      return {
+        success: false,
+        error: "Purpose must be at least 5 characters",
+      };
+    }
+    if (purpose.length > 300) {
+      return {
+        success: false,
+        error: "Purpose must be 300 characters or less",
+      };
+    }
+
+    const copies = Number(data.copies) || 1;
+    if (copies < 1 || copies > 5) {
+      return { success: false, error: "Copies must be between 1 and 5" };
+    }
+
+    if (
+      data.documentType === "other" &&
+      (!data.otherDescription || !data.otherDescription.trim())
+    ) {
+      return {
+        success: false,
+        error: "Please describe the document you need",
+      };
+    }
+
+    const student = data.student || {};
+    const firstName = (student.firstName || "").trim();
+    const lastName = (student.lastName || "").trim();
+
+    if (!firstName || !lastName) {
+      return {
+        success: false,
+        error: "First name and last name are required",
+      };
+    }
+
+    const email = (student.email || "").trim().toLowerCase();
+    const contactNumber = (student.contactNumber || "").replace(/\s/g, "");
+
+    if (!email && !contactNumber) {
+      return {
+        success: false,
+        error: "Provide either email or contact number",
+      };
+    }
+
+    await connectDB();
+
+    const result = await withIdempotency<DocumentRequestResponse>(
+      `publicDocRequest:${idempotencyKey}`,
+      async () => {
+        const { start: today, dateStr } = getAppDayRange();
+
+        const counter = await Counter.findOneAndUpdate(
+          { _id: `DOCREQ-${dateStr}` },
+          { $inc: { seq: 1 }, $setOnInsert: { date: today } },
+          { upsert: true, returnDocument: "after" },
+        );
+        const requestId = `DR-${dateStr}-${String(counter?.seq || 1).padStart(4, "0")}`;
+
+        const request = new DocumentRequest({
+          requestId,
+          userId: "public",
+          student: {
+            schoolId: "",
+            firstName,
+            lastName,
+            middleName: (student.middleName || "").trim(),
+            suffix: "",
+            year: "",
+            campus: "",
+            email,
+            contactNumber,
+          },
+          documentType: data.documentType,
+          otherDescription:
+            data.documentType === "other"
+              ? (data.otherDescription || "").trim()
+              : "",
+          purpose,
+          copies,
+          status: "pending",
+        });
+
+        await request.save();
+
+        const documentTypeLabel =
+          DOCUMENT_TYPE_LABELS[data.documentType as DocumentType] ||
+          data.documentType;
+
+        // Email only if email provided
+        if (email) {
+          sendDocumentRequestEmail({
+            email,
+            studentName: `${firstName} ${lastName}`.trim(),
+            requestId,
+            documentTypeLabel,
+            copies,
+            purpose,
+            notificationType: "submitted",
+          }).catch((err) =>
+            console.error("Public document request email failed:", err),
+          );
+        }
+
+        revalidateDocumentPaths();
+
+        return { success: true, request: serialize(request.toObject()) };
+      },
+    );
+
+    return result;
+  } catch (error: any) {
+    if (error instanceof IdempotencyConflictError) {
+      return {
+        success: false,
+        error: "Your request is still being processed. Please wait a moment.",
+      };
+    }
+    console.error("Error creating public document request:", error);
+    if (error?.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((e: any) => e.message);
+      return { success: false, error: messages.join(", ") };
+    }
+    return {
+      success: false,
+      error: "Failed to submit request. Please try again.",
+    };
+  }
+}
+
+/**
  * Create a public TOR request (no session required — landing page).
  * EMAIL ONLY — no SMS on submission.
  */
@@ -284,8 +449,6 @@ export async function createPublicTorRequest(
         });
 
         await request.save();
-
-        // No SMS on submission — email/SMS only fire on release or rejection
 
         revalidateDocumentPaths();
 
