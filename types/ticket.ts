@@ -56,6 +56,10 @@ export function getCampusForYearLevel(yearLevel: YearLevel | ""): Campus | "" {
   return "";
 }
 
+// Valid genders — single source of truth
+export const GENDERS = ["Male", "Female", "Other"] as const;
+export type Gender = (typeof GENDERS)[number];
+
 // Valid transaction types - ALL departments
 export const VALID_TRANSACTION_TYPES = [
   // Dean
@@ -166,6 +170,15 @@ export const studentSchema = z.object({
     .enum(VALID_SUFFIXES as unknown as [string, ...string[]])
     .optional()
     .or(z.literal("")),
+  gender: z.enum(GENDERS, "Gender is required"),
+  birthdate: z
+    .string()
+    .min(1, "Birthdate is required")
+    .refine((val) => !isNaN(new Date(val).getTime()), "Invalid birthdate")
+    .refine(
+      (val) => new Date(val) <= new Date(),
+      "Birthdate cannot be in the future",
+    ),
   year: z.enum(
     YEAR_LEVELS as unknown as [string, ...string[]],
     "Year level is required",
@@ -241,7 +254,7 @@ export const createTicketSchema = z
       .or(z.literal("")),
     amount: z
       .number()
-      .min(0, "Amount cannot be negative") // Changed from positive to min(0)
+      .min(0, "Amount cannot be negative")
       .max(999999999999, "Amount exceeds maximum limit")
       .refine(
         (val) => /^\d+(\.\d{1,2})?$/.test(val.toString()),
@@ -322,10 +335,10 @@ export type CreateTicketFormData = z.infer<typeof createTicketSchema>;
 export interface ITicket {
   ticketNumber: string;
   ticketId: string;
-  transactionType: string; // Changed from TransactionType to string
+  transactionType: string;
   transactionDescription?: string;
   amount: number;
-  department: string; // Changed from Department to string
+  department: string;
   status: TicketStatus;
   student: {
     schoolId: string;
@@ -333,6 +346,8 @@ export interface ITicket {
     lastName: string;
     middleName: string;
     suffix: string;
+    gender: Gender | "";
+    birthdate: string;
     year: YearLevel;
     campus: Campus;
   };

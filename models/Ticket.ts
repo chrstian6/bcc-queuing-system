@@ -3,6 +3,7 @@ import mongoose, { Document, Model } from "mongoose";
 import {
   YearLevel,
   Campus,
+  Gender,
   TicketStatus,
   RequesterType,
   Relationship,
@@ -11,6 +12,7 @@ import {
   VALID_REQUESTER_TYPES,
   VALID_RELATIONSHIPS,
   VALID_SUFFIXES,
+  GENDERS,
 } from "@/types/ticket";
 
 export interface IStudent {
@@ -19,6 +21,8 @@ export interface IStudent {
   lastName: string;
   middleName: string;
   suffix: Suffix | "";
+  gender: Gender | "";
+  birthdate: string;
   year: YearLevel;
   campus: Campus;
 }
@@ -164,6 +168,16 @@ const ticketSchema = new mongoose.Schema<ITicket>(
         type: String,
         enum: [...VALID_SUFFIXES],
         default: "",
+      },
+      gender: {
+        type: String,
+        enum: [...GENDERS, ""],
+        default: "",
+      },
+      birthdate: {
+        type: String,
+        default: "",
+        trim: true,
       },
       year: {
         type: String,
