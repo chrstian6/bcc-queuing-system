@@ -16,8 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   YearLevel,
   Campus,
+  Gender,
   YEAR_LEVELS,
-  CAMPUSES,
+  GENDERS,
   getCampusForYearLevel,
 } from "@/types/ticket";
 import { createTicket } from "@/actions/ticket";
@@ -41,6 +42,8 @@ interface StudentInfo {
   lastName: string;
   middleName: string;
   suffix: string;
+  gender: Gender | "";
+  birthdate: string;
   year: YearLevel | "";
   campus: Campus | "";
   email: string;
@@ -184,6 +187,42 @@ function getShortCampusName(campus: Campus | ""): string {
   return campus.replace("Binalbagan Catholic College - ", "");
 }
 
+/**
+ * Format a stored "YYYY-MM-DD" string into a readable date.
+ * "2003-05-14" → "May 14, 2003"
+ */
+function formatBirthdate(value: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/**
+ * Compose the full name from parts.
+ * { firstName: "Cydric", middleName: "Arroyo", lastName: "Dionela", suffix: "Jr." }
+ * → "Cydric Arroyo Dionela Jr."
+ */
+function getFullName(info: {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  suffix?: string;
+}): string {
+  const parts = [
+    info.firstName?.trim(),
+    info.middleName?.trim(),
+    info.lastName?.trim(),
+  ].filter(Boolean);
+  let name = parts.join(" ");
+  if (info.suffix?.trim()) name += ` ${info.suffix.trim()}`;
+  return name || "—";
+}
+
 function Field({
   label,
   required,
@@ -241,6 +280,38 @@ function AutoCloseCountdown({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * A single row in the receipt.
+ */
+function ReceiptRow({
+  label,
+  value,
+  bold,
+}: {
+  label: string;
+  value: React.ReactNode;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <span
+        className="text-[11px] font-semibold uppercase tracking-wide text-[#94A3B8] flex-shrink-0"
+        style={{ fontFamily: "var(--font-geist-sans)" }}
+      >
+        {label}
+      </span>
+      <span
+        className={`text-[13px] text-right break-words ${
+          bold ? "font-bold text-[#0F172A]" : "text-[#475569] font-medium"
+        }`}
+        style={{ fontFamily: "var(--font-geist-sans)" }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function TransactionModal({
   isOpen,
   onClose,
@@ -264,12 +335,24 @@ export default function TransactionModal({
   const [specifyTransaction, setSpecifyTransaction] = useState("");
   const [showTorModal, setShowTorModal] = useState(false);
 
+  // Snapshot of the submitted student/guardian info for the receipt.
+  const [submittedInfo, setSubmittedInfo] = useState<{
+    student: StudentInfo;
+    guardian: GuardianInfo;
+    isGuardian: boolean;
+    amount: string;
+    description: string;
+    transactionLabel: string;
+  } | null>(null);
+
   const [studentInfo, setStudentInfo] = useState<StudentInfo>({
     schoolId: "",
     firstName: "",
     lastName: "",
     middleName: "",
     suffix: "",
+    gender: "",
+    birthdate: "",
     year: "",
     campus: "",
     email: "",
@@ -311,7 +394,6 @@ export default function TransactionModal({
       document.body.style.width = "100%";
       document.body.style.top = `-${window.scrollY}px`;
 
-      // TOR: full dedicated modal (existing flow)
       if (
         initialTransaction === "transcript-records" &&
         department === "registrar"
@@ -365,12 +447,15 @@ export default function TransactionModal({
     setSubmitError("");
     setAmount("");
     setSpecifyTransaction("");
+    setSubmittedInfo(null);
     setStudentInfo({
       schoolId: "",
       firstName: "",
       lastName: "",
       middleName: "",
       suffix: "",
+      gender: "",
+      birthdate: "",
       year: "",
       campus: "",
       email: "",
@@ -449,6 +534,23 @@ export default function TransactionModal({
     else if (studentInfo.lastName.length < 2)
       newErrors.lastName = "Last name must be at least 2 characters";
 
+    if (!studentInfo.gender) newErrors.gender = "Required";
+
+    if (!studentInfo.birthdate) {
+      newErrors.birthdate = "Required";
+    } else {
+      const bd = new Date(studentInfo.birthdate);
+      if (isNaN(bd.getTime())) {
+        newErrors.birthdate = "Invalid date";
+      } else if (bd > new Date()) {
+        newErrors.birthdate = "Birthdate cannot be in the future";
+      } else {
+        const age =
+          (Date.now() - bd.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+        if (age < 3) newErrors.birthdate = "Please enter a valid birthdate";
+      }
+    }
+
     if (!studentInfo.year) newErrors.year = "Required";
     if (!studentInfo.campus) newErrors.campus = "Campus is required";
 
@@ -503,7 +605,6 @@ export default function TransactionModal({
           "Enter a valid 11-digit PH number (09XX XXX XXXX)";
     }
 
-    // Amount only required for cashier
     if (department === "cashier") {
       const rawAmount = amount.replace(/,/g, "");
       if (!rawAmount.trim()) newErrors.amount = "Amount is required";
@@ -515,7 +616,6 @@ export default function TransactionModal({
         newErrors.amount = "Amount cannot exceed 12 digits";
     }
 
-    // Registrar "other" needs a description
     if (isRegistrarFlow && selectedTransaction === "other-document") {
       if (!specifyTransaction.trim())
         newErrors.specifyTransaction = "Please describe the document";
@@ -548,6 +648,17 @@ export default function TransactionModal({
     try {
       const idempotencyKey = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
+      // Snapshot everything BEFORE the async call so the receipt reflects
+      // exactly what the user typed, even if state changes later.
+      const snapshot = {
+        student: { ...studentInfo },
+        guardian: { ...guardianInfo },
+        isGuardian,
+        amount,
+        description: specifyTransaction,
+        transactionLabel: getTransactionLabel(selectedTransaction || ""),
+      };
+
       // ─── REGISTRAR: submit to DocumentRequest (public, no auth) ─────────
       if (isRegistrarFlow) {
         const meta = ALL_TRANSACTIONS[selectedTransaction!];
@@ -555,7 +666,6 @@ export default function TransactionModal({
 
         const purposeString = `${meta?.label || "Document"} request`;
 
-        // Prefer guardian contact if checked, else student's
         const publicEmail = isGuardian
           ? guardianInfo.email.trim()
           : studentInfo.email.trim();
@@ -586,6 +696,7 @@ export default function TransactionModal({
             ticketNumber: result.request.requestId || "—",
             ticketId: result.request._id || "—",
           });
+          setSubmittedInfo(snapshot);
           setBlueState("gone");
           setStep(3);
         } else {
@@ -615,6 +726,8 @@ export default function TransactionModal({
           lastName: sanitizeInput(studentInfo.lastName),
           middleName: sanitizeInput(studentInfo.middleName) || undefined,
           suffix: studentInfo.suffix || undefined,
+          gender: studentInfo.gender,
+          birthdate: studentInfo.birthdate,
           year: studentInfo.year,
           campus: studentInfo.campus,
         },
@@ -642,6 +755,7 @@ export default function TransactionModal({
           ticketNumber: result.ticket.ticketNumber,
           ticketId: result.ticket.ticketId,
         });
+        setSubmittedInfo(snapshot);
         setBlueState("gone");
         setStep(3);
       } else {
@@ -675,10 +789,8 @@ export default function TransactionModal({
 
   return (
     <>
-      {/* TOR Modal - shown when transcript-records is selected */}
       <TranscriptOfRecordsModal isOpen={showTorModal} onClose={handleClose} />
 
-      {/* Regular Transaction Modal - hidden when TOR is shown */}
       {!showTorModal && (
         <>
           {/* Loading screen */}
@@ -738,7 +850,6 @@ export default function TransactionModal({
               </div>
             </div>
           ) : (
-            /* Form/Success modal */
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -793,7 +904,6 @@ export default function TransactionModal({
                       </p>
                     </div>
                   )}
-                  {/* Queue availability only matters for queue flows */}
                   {!isRegistrarFlow &&
                     availability &&
                     availability.status !== "open" &&
@@ -937,6 +1047,56 @@ export default function TransactionModal({
 
                           <div className="grid grid-cols-2 gap-3">
                             <Field
+                              label="Gender"
+                              required
+                              error={errors.gender}
+                            >
+                              <Select
+                                value={studentInfo.gender}
+                                onValueChange={(v) => {
+                                  setStudentInfo((p) => ({
+                                    ...p,
+                                    gender: v as Gender,
+                                  }));
+                                  clearErr("gender");
+                                }}
+                              >
+                                <SelectTrigger className="rounded-xl border-[#E2E8F0] focus:ring-1 focus:ring-[#0000CC] h-11">
+                                  <SelectValue placeholder="Select" />
+                                </SelectTrigger>
+                                <SelectContent className="z-[9999]">
+                                  {GENDERS.map((g) => (
+                                    <SelectItem key={g} value={g}>
+                                      {g}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </Field>
+
+                            <Field
+                              label="Birthdate"
+                              required
+                              error={errors.birthdate}
+                            >
+                              <Input
+                                type="date"
+                                value={studentInfo.birthdate}
+                                onChange={(e) => {
+                                  setStudentInfo((p) => ({
+                                    ...p,
+                                    birthdate: e.target.value,
+                                  }));
+                                  clearErr("birthdate");
+                                }}
+                                max={new Date().toISOString().split("T")[0]}
+                                className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] h-11"
+                              />
+                            </Field>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field
                               label="Year level"
                               required
                               error={errors.year}
@@ -985,7 +1145,6 @@ export default function TransactionModal({
                             </Field>
                           </div>
 
-                          {/* Amount — cashier only */}
                           {department === "cashier" && (
                             <Field
                               label="Amount to Pay (₱)"
@@ -1008,7 +1167,6 @@ export default function TransactionModal({
                             </Field>
                           )}
 
-                          {/* Description — cashier "other-school-fees" OR registrar "other-document" */}
                           {(selectedTransaction === "other-school-fees" ||
                             (isRegistrarFlow &&
                               selectedTransaction === "other-document")) && (
@@ -1277,14 +1435,15 @@ export default function TransactionModal({
                       </form>
                     )}
 
-                    {/* STEP 3: Success */}
+                    {/* STEP 3: Success + Receipt */}
                     {step === 3 && (
                       <div className="text-center">
                         <div className="w-14 h-14 bg-[#0000CC]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                           <CheckCircle2 className="w-7 h-7 text-[#0000CC]" />
                         </div>
 
-                        {amount &&
+                        {/* Amount banner for cashier */}
+                        {submittedInfo?.amount &&
                           department === "cashier" &&
                           !isRegistrarFlow && (
                             <div className="mb-4">
@@ -1298,7 +1457,7 @@ export default function TransactionModal({
                                 className="text-[24px] font-bold text-[#0000CC]"
                                 style={{ fontFamily: "var(--font-geist-sans)" }}
                               >
-                                ₱{amount}
+                                ₱{submittedInfo.amount}
                               </p>
                               <p
                                 className="text-[12px] text-[#94A3B8] mt-1"
@@ -1309,6 +1468,7 @@ export default function TransactionModal({
                             </div>
                           )}
 
+                        {/* Ticket / Request number */}
                         <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4">
                           <div className="bg-[#0000CC] px-6 py-2">
                             <p
@@ -1330,70 +1490,192 @@ export default function TransactionModal({
                           </div>
                         </div>
 
-                        <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 mb-4">
-                          <p
-                            className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wide mb-2"
-                            style={{ fontFamily: "var(--font-geist-sans)" }}
-                          >
-                            Contact Details
-                          </p>
-                          <div className="space-y-2 text-left">
-                            {hasEmail && (
-                              <div className="flex items-center gap-2">
-                                <svg
-                                  className="w-4 h-4 text-[#64748B] flex-shrink-0"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                                  />
-                                </svg>
+                        {/* ─── RECEIPT ─────────────────────────────────── */}
+                        {submittedInfo && (
+                          <div className="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4 text-left">
+                            <div className="bg-[#F8FAFC] px-5 py-3 border-b border-[#E2E8F0]">
+                              <p
+                                className="text-[10px] font-bold uppercase tracking-widest text-[#64748B]"
+                                style={{
+                                  fontFamily: "var(--font-geist-sans)",
+                                }}
+                              >
+                                Receipt
+                              </p>
+                              <p
+                                className="text-[12px] text-[#94A3B8] mt-0.5"
+                                style={{
+                                  fontFamily: "var(--font-geist-sans)",
+                                }}
+                              >
+                                {submittedInfo.transactionLabel}
+                              </p>
+                            </div>
+
+                            <div className="px-5 py-3 divide-y divide-[#F1F5F9]">
+                              {/* Student section */}
+                              <div className="pb-2">
                                 <p
-                                  className="text-[13px] text-[#475569]"
+                                  className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"
                                   style={{
                                     fontFamily: "var(--font-geist-sans)",
                                   }}
                                 >
-                                  {isGuardian
-                                    ? guardianInfo.email
-                                    : studentInfo.email}
+                                  Student Information
                                 </p>
-                              </div>
-                            )}
-                            {hasPhone && (
-                              <div className="flex items-center gap-2">
-                                <svg
-                                  className="w-4 h-4 text-[#64748B] flex-shrink-0"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+                                <ReceiptRow
+                                  label="Full Name"
+                                  value={getFullName({
+                                    firstName: submittedInfo.student.firstName,
+                                    middleName:
+                                      submittedInfo.student.middleName,
+                                    lastName: submittedInfo.student.lastName,
+                                    suffix: submittedInfo.student.suffix,
+                                  })}
+                                  bold
+                                />
+                                {submittedInfo.student.schoolId && (
+                                  <ReceiptRow
+                                    label="School ID"
+                                    value={submittedInfo.student.schoolId}
                                   />
-                                </svg>
+                                )}
+                                <ReceiptRow
+                                  label="Gender"
+                                  value={submittedInfo.student.gender || "—"}
+                                />
+                                <ReceiptRow
+                                  label="Birthdate"
+                                  value={formatBirthdate(
+                                    submittedInfo.student.birthdate,
+                                  )}
+                                />
+                                <ReceiptRow
+                                  label="Year Level"
+                                  value={submittedInfo.student.year || "—"}
+                                />
+                                <ReceiptRow
+                                  label="Campus"
+                                  value={
+                                    getShortCampusName(
+                                      submittedInfo.student.campus,
+                                    ) || "—"
+                                  }
+                                />
+                              </div>
+
+                              {/* Amount (cashier only) */}
+                              {department === "cashier" &&
+                                !isRegistrarFlow &&
+                                submittedInfo.amount && (
+                                  <div className="py-2">
+                                    <p
+                                      className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"
+                                      style={{
+                                        fontFamily: "var(--font-geist-sans)",
+                                      }}
+                                    >
+                                      Payment
+                                    </p>
+                                    <ReceiptRow
+                                      label="Amount"
+                                      value={`₱${submittedInfo.amount}`}
+                                      bold
+                                    />
+                                  </div>
+                                )}
+
+                              {/* Extra description */}
+                              {submittedInfo.description && (
+                                <div className="py-2">
+                                  <p
+                                    className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"
+                                    style={{
+                                      fontFamily: "var(--font-geist-sans)",
+                                    }}
+                                  >
+                                    Details
+                                  </p>
+                                  <ReceiptRow
+                                    label="Note"
+                                    value={submittedInfo.description}
+                                  />
+                                </div>
+                              )}
+
+                              {/* Contact section */}
+                              <div className="pt-2">
                                 <p
-                                  className="text-[13px] text-[#475569]"
+                                  className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"
                                   style={{
                                     fontFamily: "var(--font-geist-sans)",
                                   }}
                                 >
-                                  {isGuardian
-                                    ? guardianInfo.contactNumber
-                                    : studentInfo.contactNumber}
+                                  Contact
                                 </p>
+                                <ReceiptRow
+                                  label="Requester"
+                                  value={
+                                    submittedInfo.isGuardian
+                                      ? "Parent / Guardian"
+                                      : "Student"
+                                  }
+                                />
+                                {submittedInfo.isGuardian && (
+                                  <>
+                                    <ReceiptRow
+                                      label="Guardian"
+                                      value={getFullName({
+                                        firstName:
+                                          submittedInfo.guardian
+                                            .guardianFirstName,
+                                        middleName:
+                                          submittedInfo.guardian
+                                            .guardianMiddleName,
+                                        lastName:
+                                          submittedInfo.guardian
+                                            .guardianLastName,
+                                      })}
+                                    />
+                                    <ReceiptRow
+                                      label="Relationship"
+                                      value={
+                                        submittedInfo.guardian.relationship ||
+                                        "—"
+                                      }
+                                    />
+                                  </>
+                                )}
+                                {((submittedInfo.isGuardian &&
+                                  submittedInfo.guardian.email) ||
+                                  (!submittedInfo.isGuardian &&
+                                    submittedInfo.student.email)) && (
+                                  <ReceiptRow
+                                    label="Email"
+                                    value={
+                                      submittedInfo.isGuardian
+                                        ? submittedInfo.guardian.email
+                                        : submittedInfo.student.email
+                                    }
+                                  />
+                                )}
+                                {((submittedInfo.isGuardian &&
+                                  submittedInfo.guardian.contactNumber) ||
+                                  (!submittedInfo.isGuardian &&
+                                    submittedInfo.student.contactNumber)) && (
+                                  <ReceiptRow
+                                    label="Mobile"
+                                    value={
+                                      submittedInfo.isGuardian
+                                        ? submittedInfo.guardian.contactNumber
+                                        : submittedInfo.student.contactNumber
+                                    }
+                                  />
+                                )}
                               </div>
-                            )}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         <div className="bg-[#F0F0FF] border border-[#0000CC]/10 rounded-xl p-4 mb-4">
                           <p

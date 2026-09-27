@@ -32,8 +32,7 @@ async function getQueueStatus() {
         const counter = await Counter.findOne({
           _id: `STAFF-${staff.staffId}-${dateStr}`,
         }).lean();
-        return evaluateCounterState(staff, counter?.seq || 0, nowMinutes)
-          .state;
+        return evaluateCounterState(staff, counter?.seq || 0, nowMinutes).state;
       }),
     );
 
@@ -102,14 +101,16 @@ async function getQueueData() {
             createdAt: { $gte: today, $lt: tomorrow },
           });
 
-          // Get waiting list with details
+          // Get waiting list with details (now includes student)
           const waitingList = await Ticket.find({
             department: dept as any,
             status: "pending" as any,
             createdAt: { $gte: today, $lt: tomorrow },
           })
             .sort({ createdAt: 1 })
-            .select("ticketNumber transactionType department createdAt status")
+            .select(
+              "ticketNumber transactionType department createdAt status student",
+            )
             .lean();
 
           return {

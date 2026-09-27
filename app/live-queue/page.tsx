@@ -11,6 +11,13 @@ const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 const CASHIER_WINDOW_COUNT = 3;
 const MINUTES_PER_PERSON = 5;
 
+interface StudentInfo {
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+  suffix?: string;
+}
+
 interface QueueItem {
   _id: string;
   ticketNumber: string;
@@ -18,6 +25,7 @@ interface QueueItem {
   department: string;
   createdAt: string;
   status: string;
+  student?: StudentInfo;
 }
 
 interface DepartmentQueue {
@@ -31,6 +39,45 @@ interface DepartmentQueue {
 interface DataPoint {
   time: number;
   value: number;
+}
+
+// ─── Name masking (GCash-style) ─────────────────────────────────────────────
+
+/**
+ * Masks a single name part:
+ *   "Cydric"  → "Cy****"
+ *   "Arroyo"  → "Ar****"
+ *   "Dionela" → "Di*****"
+ *   "A"       → "A"
+ *   ""        → ""
+ *
+ * Keeps the first two characters (or one if the part is a single character)
+ * and replaces the rest with asterisks. Preserves original length.
+ */
+function maskNamePart(part?: string): string {
+  if (!part) return "";
+  const trimmed = part.trim();
+  if (trimmed.length === 0) return "";
+  if (trimmed.length === 1) return trimmed;
+  const visible = trimmed.slice(0, 2);
+  const hidden = "*".repeat(Math.max(trimmed.length - 2, 1));
+  return `${visible}${hidden}`;
+}
+
+/**
+ * Masks a full student name.
+ * "Cydric Arroyo Dionela" → "Cy**** Ar**** Di*****"
+ * Handles optional middle name and suffix.
+ */
+function maskStudentName(student?: StudentInfo): string {
+  if (!student) return "—";
+  const parts = [
+    maskNamePart(student.firstName),
+    maskNamePart(student.middleName),
+    maskNamePart(student.lastName),
+    student.suffix ? student.suffix : "",
+  ].filter((p) => p && p.length > 0);
+  return parts.length > 0 ? parts.join(" ") : "—";
 }
 
 // ─── Normalizers ────────────────────────────────────────────────────────────
@@ -78,14 +125,49 @@ function pendingFromList(list: any): number {
   }).length;
 }
 
+function normalizeStudent(raw: any): StudentInfo | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const student: StudentInfo = {
+    firstName: raw.firstName ?? raw.first_name ?? undefined,
+    lastName: raw.lastName ?? raw.last_name ?? undefined,
+    middleName: raw.middleName ?? raw.middle_name ?? undefined,
+    suffix: raw.suffix ?? undefined,
+  };
+  if (
+    !student.firstName &&
+    !student.lastName &&
+    !student.middleName &&
+    !student.suffix
+  ) {
+    return undefined;
+  }
+  return student;
+}
+
+function normalizeQueueItem(raw: any): QueueItem {
+  return {
+    _id: String(raw?._id ?? raw?.id ?? ""),
+    ticketNumber: String(raw?.ticketNumber ?? raw?.ticket_number ?? ""),
+    transactionType: String(
+      raw?.transactionType ?? raw?.transaction_type ?? "",
+    ),
+    department: String(raw?.department ?? ""),
+    createdAt: String(raw?.createdAt ?? raw?.created_at ?? ""),
+    status: String(raw?.status ?? ""),
+    student: normalizeStudent(raw?.student),
+  };
+}
+
 function normalizeDepartment(raw: any): DepartmentQueue {
-  const list = Array.isArray(raw?.waitingList)
+  const rawList = Array.isArray(raw?.waitingList)
     ? raw.waitingList
     : Array.isArray(raw?.waiting_list)
       ? raw.waiting_list
       : Array.isArray(raw?.queue)
         ? raw.queue
         : [];
+
+  const list: QueueItem[] = rawList.map(normalizeQueueItem);
 
   const topLevelServing = normalizeServing(
     raw?.serving,
@@ -107,8 +189,6 @@ function normalizeDepartment(raw: any): DepartmentQueue {
   const listServing = servingFromList(list);
   const serving = topLevelServing ?? listServing ?? null;
 
-  // Prefer counting the list because the top-level "waiting" field is
-  // frequently stale or hardcoded to 1 by the SSE producer.
   const listPending = pendingFromList(list);
   const topLevelWaiting = normalizeWaiting(
     raw?.waiting,
@@ -120,7 +200,6 @@ function normalizeDepartment(raw: any): DepartmentQueue {
     raw?.waiting_count,
   );
 
-  // Use the larger of the two so we never under-report
   const waiting = Math.max(listPending, topLevelWaiting);
 
   return {
@@ -174,7 +253,6 @@ function splitCashierAcrossWindows(
     return s === "pending" || s === "waiting" || s === "";
   });
 
-  // Round-robin distribution across windows
   const buckets: QueueItem[][] = Array.from(
     { length: windowCount },
     () => [] as QueueItem[],
@@ -186,8 +264,6 @@ function splitCashierAcrossWindows(
   return empty.map((win, idx) => ({
     department: win.department,
     displayName: win.displayName,
-    // Only Window 1 carries the "serving" ticket since we don't have
-    // per-window serving data from the aggregate SSE entry.
     serving: idx === 0 ? cashierDept.serving : null,
     waiting: buckets[idx].length,
     waitingList: buckets[idx],
@@ -613,8 +689,6 @@ function LiveQueueContent() {
   const deanDept = departments.find((d) => d.department === "dean");
   const cashierDept = departments.find((d) => d.department === "cashier");
 
-  // If the SSE provides per-window entries (cashier-1, cashier-2, cashier-3),
-  // use those. Otherwise split the aggregate cashier list across the windows.
   const hasPerWindowEntries = departments.some((d) =>
     d.department.startsWith("cashier-"),
   );
@@ -818,6 +892,12 @@ function LiveQueueContent() {
                         style={FONT}
                       >
                         {formatTransaction(ticket.transactionType)}
+                      </p>
+                      <p
+                        className="text-sm text-gray-500 mt-0.5 tabular-nums"
+                        style={FONT}
+                      >
+                        {maskStudentName(ticket.student)}
                       </p>
                     </div>
                     <span

@@ -25,6 +25,8 @@ interface StudentData {
   lastName: string;
   middleName?: string;
   suffix?: string;
+  gender: string;
+  birthdate: string;
   year: string;
   campus: string;
 }
@@ -66,6 +68,8 @@ interface TicketResponse {
       lastName: string;
       middleName?: string;
       suffix?: string;
+      gender?: string;
+      birthdate?: string;
       year: string;
       campus: string;
     };
@@ -177,6 +181,14 @@ export async function createTicket(
 
   if (!data.student.firstName || !data.student.lastName) {
     return { success: false, error: "Student information is incomplete" };
+  }
+
+  if (!data.student.gender) {
+    return { success: false, error: "Gender is required" };
+  }
+
+  if (!data.student.birthdate) {
+    return { success: false, error: "Birthdate is required" };
   }
 
   if (!data.student.year || !data.student.campus) {
@@ -309,6 +321,8 @@ export async function createTicket(
                 lastName: data.student.lastName,
                 middleName: data.student.middleName || "",
                 suffix: data.student.suffix || "",
+                gender: data.student.gender || "",
+                birthdate: data.student.birthdate || "",
                 year: data.student.year,
                 campus: data.student.campus,
               },
@@ -388,6 +402,8 @@ export async function createTicket(
                   lastName: ticketObj.student.lastName,
                   middleName: ticketObj.student.middleName || "",
                   suffix: ticketObj.student.suffix || "",
+                  gender: ticketObj.student.gender || "",
+                  birthdate: ticketObj.student.birthdate || "",
                   year: ticketObj.student.year,
                   campus: ticketObj.student.campus,
                 },
