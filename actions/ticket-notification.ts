@@ -5,6 +5,7 @@ import connectDB from "@/lib/mongodb";
 import Ticket from "@/models/Ticket";
 import { sendTicketNotificationEmail } from "@/lib/email";
 import { sendTicketNotificationSMS } from "@/lib/sms";
+import { getAppDayRange } from "@/lib/time";
 
 interface NotificationResult {
   success: boolean;
@@ -78,7 +79,11 @@ export async function notifyNowServing(
 }
 
 /**
- * Notify that they're next in line
+ * Notify that they're next in line.
+ *
+ * Idempotent per-ticket: guarded by `youreNextNotifiedAt`. If the head of
+ * the queue has already been notified (by an earlier call), this returns
+ * successfully without re-sending.
  */
 export async function notifyNextInLine(
   department: string,
@@ -87,18 +92,19 @@ export async function notifyNextInLine(
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getAppDayRange();
 
+    // Only look at tickets that haven't been notified yet.
     const nextTicket = await Ticket.findOne({
       department: department as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+      youreNextNotifiedAt: null,
+    } as any)
       .sort({ createdAt: 1 })
-      .select("ticketNumber ticketId transactionType requester student")
+      .select(
+        "ticketNumber ticketId transactionType requester student youreNextNotifiedAt",
+      )
       .lean();
 
     if (!nextTicket) {
@@ -159,16 +165,13 @@ export async function notifyNextTwoInLine(
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getAppDayRange();
 
     const nextTickets = await Ticket.find({
       department: department as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: 1 })
       .limit(2)
       .select("ticketNumber ticketId transactionType requester student")
@@ -304,16 +307,13 @@ export async function notifyAllWaiting(
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { start: today, end: tomorrow } = getAppDayRange();
 
     const waitingTickets = await Ticket.find({
       department: department as any,
       status: "pending" as any,
       createdAt: { $gte: today, $lt: tomorrow },
-    })
+    } as any)
       .sort({ createdAt: 1 })
       .select("ticketNumber ticketId transactionType requester student")
       .lean();

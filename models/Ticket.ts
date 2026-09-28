@@ -65,6 +65,7 @@ export interface ITicket extends Document {
   servedAt?: Date;
   completedAt?: Date;
   cancelledAt?: Date;
+  youreNextNotifiedAt?: Date | null;
   statusHistory: IStatusTracking[];
   waitTime?: number;
   serviceTime?: number;
@@ -247,6 +248,10 @@ const ticketSchema = new mongoose.Schema<ITicket>(
       type: Date,
       default: null,
     },
+    youreNextNotifiedAt: {
+      type: Date,
+      default: null,
+    },
     waitTime: {
       type: Number,
       default: null,
@@ -275,6 +280,7 @@ ticketSchema.index({ status: 1, ticketNumber: 1 });
 ticketSchema.index({ department: 1, status: 1, createdAt: 1 });
 ticketSchema.index({ assignedTo: 1, status: 1 });
 ticketSchema.index({ servedBy: 1, createdAt: 1 });
+ticketSchema.index({ department: 1, status: 1, youreNextNotifiedAt: 1 });
 
 // Virtual for formatted amount
 ticketSchema.virtual("formattedAmount").get(function () {
