@@ -132,6 +132,8 @@ export async function createDocumentRequest(data: {
             lastName: user.lastName || "",
             middleName: user.middleName || "",
             suffix: user.suffix || "",
+            gender: (user as any).gender || "",
+            birthdate: (user as any).birthdate || "",
             year: user.year || "",
             campus: user.campus || "",
             email: user.email,
@@ -152,7 +154,6 @@ export async function createDocumentRequest(data: {
         const documentTypeLabel =
           DOCUMENT_TYPE_LABELS[input.documentType as DocumentType];
 
-        // Email only — no SMS on submission
         sendDocumentRequestEmail({
           email: user.email,
           studentName,
@@ -201,9 +202,15 @@ export async function createPublicDocumentRequest(
     purpose: string;
     copies: number;
     student?: {
+      schoolId?: string;
       firstName?: string;
       lastName?: string;
       middleName?: string;
+      suffix?: string;
+      gender?: string;
+      birthdate?: string;
+      year?: string;
+      campus?: string;
       email?: string;
       contactNumber?: string;
     };
@@ -259,6 +266,13 @@ export async function createPublicDocumentRequest(
       };
     }
 
+    if (!student.gender) {
+      return { success: false, error: "Gender is required" };
+    }
+    if (!student.birthdate) {
+      return { success: false, error: "Birthdate is required" };
+    }
+
     const email = (student.email || "").trim().toLowerCase();
     const contactNumber = (student.contactNumber || "").replace(/\s/g, "");
 
@@ -287,13 +301,15 @@ export async function createPublicDocumentRequest(
           requestId,
           userId: "public",
           student: {
-            schoolId: "",
+            schoolId: (student.schoolId || "").trim(),
             firstName,
             lastName,
             middleName: (student.middleName || "").trim(),
-            suffix: "",
-            year: "",
-            campus: "",
+            suffix: (student.suffix || "").trim(),
+            gender: student.gender,
+            birthdate: student.birthdate,
+            year: (student.year || "").trim(),
+            campus: (student.campus || "").trim(),
             email,
             contactNumber,
           },
@@ -313,7 +329,6 @@ export async function createPublicDocumentRequest(
           DOCUMENT_TYPE_LABELS[data.documentType as DocumentType] ||
           data.documentType;
 
-        // Email only if email provided
         if (email) {
           sendDocumentRequestEmail({
             email,
@@ -397,6 +412,13 @@ export async function createPublicTorRequest(
         );
         const requestId = `DR-${dateStr}-${String(counter?.seq || 1).padStart(4, "0")}`;
 
+        const genderCapitalized =
+          torData.student.gender === "male"
+            ? "Male"
+            : torData.student.gender === "female"
+              ? "Female"
+              : "";
+
         const request = new DocumentRequest({
           requestId,
           userId: "public",
@@ -406,6 +428,8 @@ export async function createPublicTorRequest(
             lastName: torData.student.lastName,
             middleName: torData.student.middleName || "",
             suffix: "",
+            gender: genderCapitalized,
+            birthdate: torData.student.birthdate || "",
             year: "",
             campus: "",
             email: "",
@@ -698,7 +722,6 @@ export async function processDocumentRequest(
     const contactNumber =
       doc.student?.contactNumber || doc.torDetails?.student?.contactNo || "";
 
-    // Email — fires for every status change
     if (doc.student?.email) {
       sendDocumentRequestEmail({
         email: doc.student.email,
@@ -715,7 +738,6 @@ export async function processDocumentRequest(
       }).catch((err) => console.error("Document status email failed:", err));
     }
 
-    // SMS — ONLY for released and rejected
     if (contactNumber && SMS_STATUSES.includes(transition.to)) {
       console.log(
         `Sending SMS for status "${transition.to}" to:`,
