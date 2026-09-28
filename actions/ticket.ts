@@ -18,6 +18,7 @@ import {
 } from "@/lib/authz";
 import { ROLES } from "@/lib/roles";
 import { getAppDayRange } from "@/lib/time";
+import { notifyNextInLine } from "./ticket-notification";
 
 interface StudentData {
   schoolId: string;
@@ -120,6 +121,47 @@ function resolveDepartment(staffData: any, session: any): string {
     session?.user?.staffRole ||
     "cashier"
   );
+}
+
+/**
+ * Fire a "you're next" notification to the current head of the queue,
+ * but only if that ticket hasn't been notified before.
+ *
+ * Uses `youreNextNotifiedAt` as an atomic guard so concurrent calls can't
+ * double-notify the same ticket. Safe to call after every pending -> serving
+ * transition. Never throws — best-effort side effect.
+ */
+async function notifyHeadOfQueueOnce(
+  department: string,
+  staffName?: string,
+): Promise<void> {
+  try {
+    const { start: today, end: tomorrow } = getAppDayRange();
+
+    // Atomically claim the head of the queue. If two callers race,
+    // only one will find `youreNextNotifiedAt: null` and update it.
+    const head = await Ticket.findOneAndUpdate(
+      {
+        department: department as any,
+        status: "pending" as any,
+        createdAt: { $gte: today, $lt: tomorrow },
+        youreNextNotifiedAt: null,
+      } as any,
+      { $set: { youreNextNotifiedAt: new Date() } },
+      { sort: { createdAt: 1 }, new: true },
+    ).lean();
+
+    if (!head) return; // no un-notified pending tickets
+
+    // Delegate to the notification action. It re-queries the same head
+    // (sort order matches), so the person pinged is guaranteed to be the
+    // one we just marked.
+    await notifyNextInLine(department, staffName).catch((err) =>
+      console.error("notifyNextInLine failed:", err),
+    );
+  } catch (error) {
+    console.error("notifyHeadOfQueueOnce error:", error);
+  }
 }
 
 export async function createTicket(
@@ -935,6 +977,9 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
       ).catch((err) => console.error("Serving SMS failed:", err));
     }
 
+    // Notify the next person in line (once, guarded by youreNextNotifiedAt)
+    await notifyHeadOfQueueOnce(department, staffId);
+
     revalidatePath("/staff/cashier/dashboard");
     revalidatePath("/staff/dean/dashboard");
     revalidatePath("/staff/registrar/dashboard");
@@ -1181,6 +1226,12 @@ export async function serveNextTicket(department?: string) {
 
     if (!nextTicket) return { success: false, error: "No pending tickets" };
 
+    // Notify the next person in line (once, guarded by youreNextNotifiedAt)
+    const servedDept = (nextTicket as any).department || department || "";
+    if (servedDept) {
+      await notifyHeadOfQueueOnce(servedDept, "admin");
+    }
+
     revalidatePath("/admin/dashboard");
     revalidatePath("/admin/queue");
     revalidatePath("/staff/cashier/dashboard");
@@ -1350,6 +1401,14 @@ export async function updateTicketStatus(
     ).lean();
 
     if (!ticket) return { success: false, error: "Ticket not found" };
+
+    // If we just moved a ticket to "serving", notify the next person in line
+    if (status === "serving") {
+      const servedDept = (ticket as any).department;
+      if (servedDept) {
+        await notifyHeadOfQueueOnce(servedDept, "admin");
+      }
+    }
 
     revalidatePath("/admin/dashboard");
     revalidatePath("/admin/queue");
