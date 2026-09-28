@@ -497,7 +497,7 @@ function getWaitColor(waiting: number) {
   };
 }
 
-// ─── Card ───────────────────────────────────────────────────────────────────
+// ─── Card (Dean's Office — single lane) ────────────────────────────────────
 
 interface QueueCardProps {
   label: string;
@@ -574,6 +574,129 @@ function QueueCard({ label, serving, waiting }: QueueCardProps) {
             </p>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Window column (Cashier — one column per window, tickets stacked) ─────
+
+interface WindowColumnProps {
+  displayName: string;
+  serving: string | null;
+  waiting: number;
+  waitingList: QueueItem[];
+}
+
+function WindowColumn({
+  displayName,
+  serving,
+  waiting,
+  waitingList,
+}: WindowColumnProps) {
+  const colors = getWaitColor(waiting);
+  const estimatedTime = getEstimatedServeTime(waiting);
+
+  return (
+    <div className="border border-gray-100 rounded-xl overflow-hidden flex flex-col">
+      {/* Column header */}
+      <div className="p-4 border-b border-gray-100 bg-gray-50/60">
+        <div className="flex items-center gap-2 mb-3">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              serving ? "bg-green-500 animate-pulse" : "bg-gray-300"
+            }`}
+          />
+          <span
+            className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
+            style={FONT}
+          >
+            {displayName}
+          </span>
+        </div>
+
+        <div className="flex items-baseline gap-2 mb-3">
+          {serving ? (
+            <span
+              className="text-3xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
+              style={FONT}
+            >
+              #{serving}
+            </span>
+          ) : (
+            <span
+              className="text-3xl font-extrabold text-gray-200 tracking-tight"
+              style={FONT}
+            >
+              —
+            </span>
+          )}
+          <span className="text-[11px] text-gray-400 font-medium" style={FONT}>
+            now serving
+          </span>
+        </div>
+
+        <div
+          className={`rounded-lg border ${colors.border} ${colors.bg} px-2.5 py-1.5`}
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="flex items-center gap-1">
+              <Timer className={`w-3 h-3 ${colors.text}`} />
+              <span className={`text-sm font-bold ${colors.text}`} style={FONT}>
+                {formatWait(waiting)}
+              </span>
+            </span>
+            {estimatedTime && (
+              <span
+                className={`text-[10px] ${colors.subtext} font-medium`}
+                style={FONT}
+              >
+                ~{estimatedTime}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Vertical stack of queued ticket numbers for this window */}
+      <div className="p-3 flex-1">
+        <p
+          className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1"
+          style={FONT}
+        >
+          Waiting • {waitingList.length}
+        </p>
+        {waitingList.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-[11px] text-gray-300" style={FONT}>
+              No tickets queued
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {waitingList.map((ticket, idx) => (
+              <div
+                key={ticket._id || idx}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-100"
+              >
+                <span
+                  className="text-sm font-bold text-gray-700 tabular-nums"
+                  style={FONT}
+                >
+                  #{ticket.ticketNumber}
+                </span>
+                <span
+                  className="text-[10px] text-gray-400 font-medium truncate max-w-[45%] text-right"
+                  style={FONT}
+                >
+                  {ticket.student
+                    ? maskStudentName(ticket.student)
+                    : ticket.transactionType}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -799,20 +922,31 @@ function LiveQueueContent() {
           <SleekChart dataPoints={history} />
         </div>
 
-        <div className="px-6 py-5 border-b border-gray-100 space-y-4">
+        {/* Dean's Office — single lane */}
+        <div className="px-6 pt-5 border-b border-gray-100">
           <QueueCard
             label="Dean's Office"
             serving={deanDept?.serving ?? null}
             waiting={deanDept?.waiting ?? 0}
           />
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Cashier — one column per window, tickets stacked vertically */}
+        <div className="px-6 py-5 border-b border-gray-100">
+          <h2
+            className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3"
+            style={FONT}
+          >
+            Cashier Windows
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
             {cashierWindows.map((win) => (
-              <QueueCard
+              <WindowColumn
                 key={win.department}
-                label={`Cashier • ${win.displayName}`}
+                displayName={win.displayName}
                 serving={win.serving}
                 waiting={win.waiting}
+                waitingList={win.waitingList}
               />
             ))}
           </div>

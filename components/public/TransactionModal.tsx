@@ -187,10 +187,6 @@ function getShortCampusName(campus: Campus | ""): string {
   return campus.replace("Binalbagan Catholic College - ", "");
 }
 
-/**
- * Format a stored "YYYY-MM-DD" string into a readable date.
- * "2003-05-14" → "May 14, 2003"
- */
 function formatBirthdate(value: string): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -202,11 +198,6 @@ function formatBirthdate(value: string): string {
   });
 }
 
-/**
- * Compose the full name from parts.
- * { firstName: "Cydric", middleName: "Arroyo", lastName: "Dionela", suffix: "Jr." }
- * → "Cydric Arroyo Dionela Jr."
- */
 function getFullName(info: {
   firstName: string;
   middleName?: string;
@@ -280,9 +271,6 @@ function AutoCloseCountdown({ onClose }: { onClose: () => void }) {
   );
 }
 
-/**
- * A single row in the receipt.
- */
 function ReceiptRow({
   label,
   value,
@@ -335,7 +323,6 @@ export default function TransactionModal({
   const [specifyTransaction, setSpecifyTransaction] = useState("");
   const [showTorModal, setShowTorModal] = useState(false);
 
-  // Snapshot of the submitted student/guardian info for the receipt.
   const [submittedInfo, setSubmittedInfo] = useState<{
     student: StudentInfo;
     guardian: GuardianInfo;
@@ -373,7 +360,6 @@ export default function TransactionModal({
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Determines whether this modal submits to Ticket (queue) or DocumentRequest
   const isRegistrarFlow = department === "registrar";
 
   useEffect(() => {
@@ -648,8 +634,6 @@ export default function TransactionModal({
     try {
       const idempotencyKey = `ticket_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
-      // Snapshot everything BEFORE the async call so the receipt reflects
-      // exactly what the user typed, even if state changes later.
       const snapshot = {
         student: { ...studentInfo },
         guardian: { ...guardianInfo },
@@ -681,9 +665,15 @@ export default function TransactionModal({
             purpose: purposeString,
             copies: 1,
             student: {
+              schoolId: studentInfo.schoolId.trim() || "",
               firstName: studentInfo.firstName.trim(),
               lastName: studentInfo.lastName.trim(),
               middleName: studentInfo.middleName.trim(),
+              suffix: studentInfo.suffix || "",
+              gender: studentInfo.gender,
+              birthdate: studentInfo.birthdate,
+              year: studentInfo.year,
+              campus: studentInfo.campus,
               email: publicEmail,
               contactNumber: publicContact,
             },
@@ -1442,7 +1432,6 @@ export default function TransactionModal({
                           <CheckCircle2 className="w-7 h-7 text-[#0000CC]" />
                         </div>
 
-                        {/* Amount banner for cashier */}
                         {submittedInfo?.amount &&
                           department === "cashier" &&
                           !isRegistrarFlow && (
@@ -1468,7 +1457,6 @@ export default function TransactionModal({
                             </div>
                           )}
 
-                        {/* Ticket / Request number */}
                         <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4">
                           <div className="bg-[#0000CC] px-6 py-2">
                             <p
@@ -1490,7 +1478,6 @@ export default function TransactionModal({
                           </div>
                         </div>
 
-                        {/* ─── RECEIPT ─────────────────────────────────── */}
                         {submittedInfo && (
                           <div className="bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden mb-4 text-left">
                             <div className="bg-[#F8FAFC] px-5 py-3 border-b border-[#E2E8F0]">
@@ -1513,7 +1500,6 @@ export default function TransactionModal({
                             </div>
 
                             <div className="px-5 py-3 divide-y divide-[#F1F5F9]">
-                              {/* Student section */}
                               <div className="pb-2">
                                 <p
                                   className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"
@@ -1564,7 +1550,6 @@ export default function TransactionModal({
                                 />
                               </div>
 
-                              {/* Amount (cashier only) */}
                               {department === "cashier" &&
                                 !isRegistrarFlow &&
                                 submittedInfo.amount && (
@@ -1585,7 +1570,6 @@ export default function TransactionModal({
                                   </div>
                                 )}
 
-                              {/* Extra description */}
                               {submittedInfo.description && (
                                 <div className="py-2">
                                   <p
@@ -1603,7 +1587,6 @@ export default function TransactionModal({
                                 </div>
                               )}
 
-                              {/* Contact section */}
                               <div className="pt-2">
                                 <p
                                   className="text-[10px] font-bold uppercase tracking-widest text-[#0000CC] mb-1.5"

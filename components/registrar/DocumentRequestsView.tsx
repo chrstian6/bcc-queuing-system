@@ -63,6 +63,21 @@ function dayLabel(dateStr: string) {
   });
 }
 
+/**
+ * Format a stored "YYYY-MM-DD" string into a readable date.
+ * "2003-05-14" → "May 14, 2003"
+ */
+function formatBirthdate(value: string | undefined | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 export function DocumentRequestsView() {
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") || "all";
@@ -277,21 +292,34 @@ export function DocumentRequestsView() {
                           </div>
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                              Gender
+                            </p>
+                            <p className="text-gray-800">
+                              {request.student?.gender || "—"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                              Birthdate
+                            </p>
+                            <p className="text-gray-800">
+                              {formatBirthdate(request.student?.birthdate)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                               Purpose
                             </p>
                             <p className="text-gray-800">{request.purpose}</p>
                           </div>
-                          {request.status === "rejected" &&
-                            request.remarks && (
-                              <div className="sm:col-span-2">
-                                <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-1">
-                                  Rejection Reason
-                                </p>
-                                <p className="text-red-600">
-                                  {request.remarks}
-                                </p>
-                              </div>
-                            )}
+                          {request.status === "rejected" && request.remarks && (
+                            <div className="sm:col-span-2">
+                              <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-1">
+                                Rejection Reason
+                              </p>
+                              <p className="text-red-600">{request.remarks}</p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Actions per status */}
@@ -413,8 +441,7 @@ export function DocumentRequestsView() {
               type="button"
               disabled={!rejectRemarks.trim() || actingOn !== null}
               onClick={() =>
-                rejectTarget &&
-                runAction(rejectTarget, "reject", rejectRemarks)
+                rejectTarget && runAction(rejectTarget, "reject", rejectRemarks)
               }
               className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
             >

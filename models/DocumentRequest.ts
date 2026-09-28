@@ -11,6 +11,8 @@ export interface IDocumentRequestStudent {
   lastName: string;
   middleName: string;
   suffix: string;
+  gender: string;
+  birthdate: string;
   year: string;
   campus: string;
   email: string;
@@ -79,11 +81,17 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
     requestId: { type: String, required: true, unique: true },
     userId: { type: String, required: true, index: true },
     student: {
-      schoolId: { type: String, default: "" }, // Not required anymore
+      schoolId: { type: String, default: "" },
       firstName: { type: String, required: true },
       lastName: { type: String, required: true },
       middleName: { type: String, default: "" },
       suffix: { type: String, default: "" },
+      gender: {
+        type: String,
+        enum: ["Male", "Female", "Other", ""],
+        default: "",
+      },
+      birthdate: { type: String, default: "" },
       year: { type: String, default: "" },
       campus: { type: String, default: "" },
       email: { type: String, default: "", lowercase: true },
@@ -92,8 +100,6 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
     documentType: {
       type: String,
       required: true,
-      // Remove enum restriction to accept any string
-      // enum: VALID_DOCUMENT_TYPES,
     },
     otherDescription: { type: String, default: "", maxlength: 200 },
     purpose: { type: String, required: true, maxlength: 300 },
