@@ -20,6 +20,17 @@ export interface IDocumentRequestStudent {
 }
 
 // TOR-specific fields
+export interface ITorSchoolEntry {
+  school: string;
+  yearGraduated: string;
+}
+
+export interface ITorEducationalBackground {
+  elementary: ITorSchoolEntry;
+  highSchool: ITorSchoolEntry;
+  seniorHigh: ITorSchoolEntry;
+}
+
 export interface ITorDetails {
   purpose: {
     employment: boolean;
@@ -48,6 +59,7 @@ export interface ITorDetails {
     semester: "1st" | "2nd" | "Summer";
     schoolYear: string;
   };
+  educationalBackground: ITorEducationalBackground;
   fee: number;
 }
 
@@ -152,6 +164,20 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
             default: "1st",
           },
           schoolYear: { type: String, default: "" },
+        },
+        educationalBackground: {
+          elementary: {
+            school: { type: String, default: "" },
+            yearGraduated: { type: String, default: "" },
+          },
+          highSchool: {
+            school: { type: String, default: "" },
+            yearGraduated: { type: String, default: "" },
+          },
+          seniorHigh: {
+            school: { type: String, default: "" },
+            yearGraduated: { type: String, default: "" },
+          },
         },
         fee: { type: Number, default: 0 },
       },

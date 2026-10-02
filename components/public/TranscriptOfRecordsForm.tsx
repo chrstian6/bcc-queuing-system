@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { Briefcase, User, GraduationCap } from "lucide-react";
+import { Briefcase, User, GraduationCap, School } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,17 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 const CAV_FEE = 80;
 const AUTH_OTR_FEE = 30;
 const OTR_FEE = 300;
+
+export interface TorSchoolEntry {
+  school: string;
+  yearGraduated: string;
+}
+
+export interface TorEducationalBackground {
+  elementary: TorSchoolEntry;
+  highSchool: TorSchoolEntry;
+  seniorHigh: TorSchoolEntry;
+}
 
 export interface TorFormData {
   purpose: {
@@ -40,6 +51,7 @@ export interface TorFormData {
     semester: "1st" | "2nd" | "Summer";
     schoolYear: string;
   };
+  educationalBackground: TorEducationalBackground;
   fee: number;
 }
 
@@ -48,35 +60,10 @@ interface TranscriptOfRecordsFormProps {
   onCancel?: () => void;
 }
 
-type PurposeState = {
-  employment: boolean;
-  employmentScope: "local" | "abroad";
-  cavChed: boolean;
-  cavScope: "local" | "abroad";
-  boardExam: boolean;
-  boardExamType: "cpa" | "let" | "other";
-  boardExamOther: string;
-};
-
-type StudentState = {
-  lastName: string;
-  firstName: string;
-  middleName: string;
-  birthdate: string;
-  birthplace: string;
-  gender: "male" | "female";
-  address: string;
-  contactNo: string;
-};
-
-type AcademicState = {
-  course: string;
-  major: string;
-  yearGraduated: string;
-  notGraduated: boolean;
-  semester: "1st" | "2nd" | "Summer";
-  schoolYear: string;
-};
+type PurposeState = TorFormData["purpose"];
+type StudentState = TorFormData["student"];
+type AcademicState = TorFormData["academic"];
+type EducationalBackgroundState = TorFormData["educationalBackground"];
 
 const initialPurpose: PurposeState = {
   employment: false,
@@ -86,6 +73,17 @@ const initialPurpose: PurposeState = {
   boardExam: false,
   boardExamType: "cpa",
   boardExamOther: "",
+};
+
+const initialSchoolEntry: TorSchoolEntry = {
+  school: "",
+  yearGraduated: "",
+};
+
+const initialEducationalBackground: EducationalBackgroundState = {
+  elementary: { ...initialSchoolEntry },
+  highSchool: { ...initialSchoolEntry },
+  seniorHigh: { ...initialSchoolEntry },
 };
 
 export default function TranscriptOfRecordsForm({
@@ -111,6 +109,8 @@ export default function TranscriptOfRecordsForm({
     semester: "1st",
     schoolYear: "",
   });
+  const [educationalBackground, setEducationalBackground] =
+    useState<EducationalBackgroundState>(initialEducationalBackground);
 
   const updatePurpose = (patch: Partial<PurposeState>) =>
     setPurpose((p) => ({ ...p, ...patch }));
@@ -119,11 +119,27 @@ export default function TranscriptOfRecordsForm({
   const updateAcademic = (key: keyof AcademicState, value: string | boolean) =>
     setAcademic((a) => ({ ...a, [key]: value }));
 
+  const updateSchool = (
+    level: keyof EducationalBackgroundState,
+    key: keyof TorSchoolEntry,
+    value: string,
+  ) =>
+    setEducationalBackground((eb) => ({
+      ...eb,
+      [level]: { ...eb[level], [key]: value },
+    }));
+
   const estimatedFee = OTR_FEE + (purpose.cavChed ? CAV_FEE + AUTH_OTR_FEE : 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({ purpose, student, academic, fee: estimatedFee });
+    onSubmit({
+      purpose,
+      student,
+      academic,
+      educationalBackground,
+      fee: estimatedFee,
+    });
   };
 
   const labelStyle = { fontFamily: "var(--font-geist-sans)" };
@@ -362,6 +378,34 @@ export default function TranscriptOfRecordsForm({
         </div>
       </div>
 
+      {/* Educational Background */}
+      <div>
+        <h3
+          className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#0F172A]"
+          style={labelStyle}
+        >
+          <School className="h-4 w-4 text-[#0000CC]" />
+          Educational Background
+        </h3>
+        <div className="space-y-4 rounded-xl border border-gray-200 bg-[#F8FAFC] p-4">
+          <SchoolRow
+            level="Elementary"
+            entry={educationalBackground.elementary}
+            onChange={(key, value) => updateSchool("elementary", key, value)}
+          />
+          <SchoolRow
+            level="High School"
+            entry={educationalBackground.highSchool}
+            onChange={(key, value) => updateSchool("highSchool", key, value)}
+          />
+          <SchoolRow
+            level="Senior High"
+            entry={educationalBackground.seniorHigh}
+            onChange={(key, value) => updateSchool("seniorHigh", key, value)}
+          />
+        </div>
+      </div>
+
       {/* Academic Information */}
       <div>
         <h3
@@ -483,6 +527,42 @@ export default function TranscriptOfRecordsForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function SchoolRow({
+  level,
+  entry,
+  onChange,
+}: {
+  level: string;
+  entry: TorSchoolEntry;
+  onChange: (key: keyof TorSchoolEntry, value: string) => void;
+}) {
+  const labelStyle = { fontFamily: "var(--font-geist-sans)" };
+  return (
+    <div>
+      <p
+        className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#0000CC]"
+        style={labelStyle}
+      >
+        {level}
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField
+          label="School"
+          placeholder="Name of school"
+          value={entry.school}
+          onChange={(v) => onChange("school", v)}
+        />
+        <FormField
+          label="Year Graduated"
+          placeholder="e.g. 2018"
+          value={entry.yearGraduated}
+          onChange={(v) => onChange("yearGraduated", v)}
+        />
+      </div>
+    </div>
   );
 }
 

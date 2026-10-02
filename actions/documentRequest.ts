@@ -467,6 +467,23 @@ export async function createPublicTorRequest(
               semester: torData.academic.semester,
               schoolYear: torData.academic.schoolYear,
             },
+            educationalBackground: {
+              elementary: {
+                school: torData.educationalBackground.elementary.school,
+                yearGraduated:
+                  torData.educationalBackground.elementary.yearGraduated,
+              },
+              highSchool: {
+                school: torData.educationalBackground.highSchool.school,
+                yearGraduated:
+                  torData.educationalBackground.highSchool.yearGraduated,
+              },
+              seniorHigh: {
+                school: torData.educationalBackground.seniorHigh.school,
+                yearGraduated:
+                  torData.educationalBackground.seniorHigh.yearGraduated,
+              },
+            },
             fee: torData.fee,
           },
           status: "pending",
