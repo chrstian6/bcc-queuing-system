@@ -188,7 +188,7 @@ export async function sendDocumentRequestSMS(
 
     switch (status) {
       case "submitted":
-        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} has been submitted. We'll notify you when it's ready.`;
+        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is PENDING. We'll text you again once there's an update.`;
         break;
       case "processing":
         message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is now being processed.`;
@@ -264,7 +264,7 @@ export async function sendTicketNotificationSMS(
 
     switch (status) {
       case "submitted":
-        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} has been created. Position: ${queuePosition || 1}. We'll notify you when it's your turn.`;
+        message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} is PENDING. Position: ${queuePosition || 1}. We'll notify you when it's your turn.`;
         break;
       case "serving":
         message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} for ${transactionLabel} is now being served${staffName ? ` by ${staffName}` : ""}. Please proceed to the counter.`;
