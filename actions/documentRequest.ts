@@ -46,10 +46,10 @@ function revalidateDocumentPaths() {
   revalidatePath("/staff/registrar/dashboard");
 }
 
-/**
- * Create a document request (requires student session)
- * EMAIL ONLY — no SMS on submission.
- */
+// ─────────────────────────────────────────────────────────────────────────
+// CREATE (session student)
+// ─────────────────────────────────────────────────────────────────────────
+
 export async function createDocumentRequest(data: {
   documentType: string;
   otherDescription?: string;
@@ -190,11 +190,10 @@ export async function createDocumentRequest(data: {
   }
 }
 
-/**
- * Create a PUBLIC document request (no session required — landing page).
- * Used when a guest picks a document from the Registrar dropdown.
- * EMAIL ONLY — no SMS on submission.
- */
+// ─────────────────────────────────────────────────────────────────────────
+// CREATE (public document request)
+// ─────────────────────────────────────────────────────────────────────────
+
 export async function createPublicDocumentRequest(
   data: {
     documentType: string;
@@ -214,6 +213,7 @@ export async function createPublicDocumentRequest(
       email?: string;
       contactNumber?: string;
     };
+    torDetails?: any;
   },
   idempotencyKey: string,
 ): Promise<DocumentRequestResponse> {
@@ -266,13 +266,6 @@ export async function createPublicDocumentRequest(
       };
     }
 
-    if (!student.gender) {
-      return { success: false, error: "Gender is required" };
-    }
-    if (!student.birthdate) {
-      return { success: false, error: "Birthdate is required" };
-    }
-
     const email = (student.email || "").trim().toLowerCase();
     const contactNumber = (student.contactNumber || "").replace(/\s/g, "");
 
@@ -306,8 +299,8 @@ export async function createPublicDocumentRequest(
             lastName,
             middleName: (student.middleName || "").trim(),
             suffix: (student.suffix || "").trim(),
-            gender: student.gender,
-            birthdate: student.birthdate,
+            gender: student.gender || "",
+            birthdate: student.birthdate || "",
             year: (student.year || "").trim(),
             campus: (student.campus || "").trim(),
             email,
@@ -320,6 +313,7 @@ export async function createPublicDocumentRequest(
               : "",
           purpose,
           copies,
+          torDetails: data.torDetails ?? null,
           status: "pending",
         });
 
@@ -369,10 +363,10 @@ export async function createPublicDocumentRequest(
   }
 }
 
-/**
- * Create a public TOR request (no session required — landing page).
- * EMAIL ONLY — no SMS on submission.
- */
+// ─────────────────────────────────────────────────────────────────────────
+// CREATE (public TOR)
+// ─────────────────────────────────────────────────────────────────────────
+
 export async function createPublicTorRequest(
   torData: TorFormData,
   idempotencyKey: string,
@@ -435,7 +429,7 @@ export async function createPublicTorRequest(
             email: "",
             contactNumber: torData.student.contactNo || "",
           },
-          documentType: "transcript-records",
+          documentType: "tor",
           otherDescription: "",
           purpose: purposeString,
           copies: 1,
@@ -517,9 +511,10 @@ export async function createPublicTorRequest(
   }
 }
 
-/**
- * Get my document requests (requires student session)
- */
+// ─────────────────────────────────────────────────────────────────────────
+// READ — this is the one that matters
+// ─────────────────────────────────────────────────────────────────────────
+
 export async function getMyDocumentRequests() {
   try {
     const session = await requireStudent();
@@ -538,9 +533,6 @@ export async function getMyDocumentRequests() {
   }
 }
 
-/**
- * Get registrar requests
- */
 export async function getRegistrarRequests(filters?: {
   status?: string;
   search?: string;
@@ -565,21 +557,35 @@ export async function getRegistrarRequests(filters?: {
       ];
     }
 
+    // No .select() — return the full document including torDetails.
     const requests = await DocumentRequest.find(query)
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
 
-    return { success: true, requests: serialize(requests) };
+    // ── Debug: verify torDetails arrives before serialization ────────
+    console.log(
+      "[GET_REGISTRAR] fetched",
+      requests.length,
+      "requests. First torDetails:",
+      JSON.stringify(requests[0]?.torDetails ?? null, null, 2),
+    );
+
+    const serialized = serialize(requests);
+
+    // ── Debug: verify torDetails survives JSON serialization ────────
+    console.log(
+      "[GET_REGISTRAR] after serialize, first torDetails:",
+      JSON.stringify(serialized[0]?.torDetails ?? null, null, 2),
+    );
+
+    return { success: true, requests: serialized };
   } catch (error) {
     console.error("Error fetching registrar requests:", error);
     return { success: false, error: "Failed to fetch requests", requests: [] };
   }
 }
 
-/**
- * Get registrar request stats
- */
 export async function getRegistrarRequestStats() {
   try {
     const session = await requireRole(ROLES.ADMIN, ROLES.REGISTRAR);
@@ -621,6 +627,10 @@ export async function getRegistrarRequestStats() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// STATUS UPDATE
+// ─────────────────────────────────────────────────────────────────────────
+
 type ProcessAction = "start-processing" | "mark-ready" | "release" | "reject";
 
 const TRANSITIONS: Record<
@@ -645,10 +655,6 @@ const TRANSITIONS: Record<
   },
 };
 
-/**
- * Process document request.
- * SMS fires ONLY for statuses in SMS_STATUSES (released, rejected).
- */
 export async function processDocumentRequest(
   requestId: string,
   action: ProcessAction,
@@ -756,10 +762,6 @@ export async function processDocumentRequest(
     }
 
     if (contactNumber && SMS_STATUSES.includes(transition.to)) {
-      console.log(
-        `Sending SMS for status "${transition.to}" to:`,
-        contactNumber,
-      );
       sendDocumentRequestSMS(
         contactNumber,
         studentName,
@@ -768,10 +770,6 @@ export async function processDocumentRequest(
         transition.to,
         trimmedRemarks || undefined,
       ).catch((err) => console.error("Document status SMS failed:", err));
-    } else {
-      console.log(
-        `SMS skipped for status "${transition.to}" (SMS only for released / rejected)`,
-      );
     }
 
     revalidateDocumentPaths();
