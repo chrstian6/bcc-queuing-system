@@ -63,10 +63,6 @@ function dayLabel(dateStr: string) {
   });
 }
 
-/**
- * Format a stored "YYYY-MM-DD" string into a readable date.
- * "2003-05-14" → "May 14, 2003"
- */
 function formatBirthdate(value: string | undefined | null): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -76,6 +72,58 @@ function formatBirthdate(value: string | undefined | null): string {
     month: "long",
     day: "numeric",
   });
+}
+
+/**
+ * Small helper: renders a labeled value or an em-dash when empty.
+ */
+function Field({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value?: string | number | null;
+  className?: string;
+}) {
+  const display =
+    value === null || value === undefined || value === "" ? "—" : String(value);
+  return (
+    <div className={className}>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+        {label}
+      </p>
+      <p className="text-gray-800 break-words">{display}</p>
+    </div>
+  );
+}
+
+/**
+ * Renders one educational level row (Elementary / High School / Senior High).
+ */
+function SchoolField({
+  label,
+  school,
+  yearGraduated,
+}: {
+  label: string;
+  school?: string | null;
+  yearGraduated?: string | null;
+}) {
+  if (!school && !yearGraduated) return null;
+  return (
+    <div className="flex flex-col">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+        {label}
+      </p>
+      <p className="text-gray-800">{school || "—"}</p>
+      {yearGraduated && (
+        <p className="text-xs text-gray-400 mt-0.5">
+          Graduated {yearGraduated}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function DocumentRequestsView() {
@@ -117,7 +165,6 @@ export function DocumentRequestsView() {
     loadData();
   }, [loadData]);
 
-  // Sync filter when sidebar sub-links change the ?status= param
   useEffect(() => {
     setStatusFilter(searchParams.get("status") || "all");
   }, [searchParams]);
@@ -146,7 +193,6 @@ export function DocumentRequestsView() {
     }
   };
 
-  // Group by day
   const groups: { label: string; items: any[] }[] = [];
   for (const request of requests) {
     const label = dayLabel(request.createdAt);
@@ -237,6 +283,12 @@ export function DocumentRequestsView() {
                         request.documentType as DocumentType
                       ] || request.documentType;
 
+                const tor = request.torDetails;
+                const torStudent = tor?.student;
+                const torPurpose = tor?.purpose;
+                const torAcademic = tor?.academic;
+                const torEdu = tor?.educationalBackground;
+
                 return (
                   <div key={request.requestId}>
                     <button
@@ -273,45 +325,52 @@ export function DocumentRequestsView() {
 
                     {isOpen && (
                       <div className="px-4 pb-4 pt-1 space-y-4">
+                        {/* ─── Student info ─────────────────────────── */}
                         <div className="rounded-lg bg-gray-50 p-4 grid gap-3 sm:grid-cols-2 text-sm">
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                              Student
-                            </p>
-                            <p className="text-gray-800">
-                              {request.student?.firstName}{" "}
-                              {request.student?.lastName} •{" "}
-                              {request.student?.year}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {request.student?.email}
-                              {request.student?.contactNumber
-                                ? ` • ${request.student.contactNumber}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                              Gender
-                            </p>
-                            <p className="text-gray-800">
-                              {request.student?.gender || "—"}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                              Birthdate
-                            </p>
-                            <p className="text-gray-800">
-                              {formatBirthdate(request.student?.birthdate)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                              Purpose
-                            </p>
-                            <p className="text-gray-800">{request.purpose}</p>
-                          </div>
+                          <Field
+                            label="Full name"
+                            value={`${request.student?.firstName ?? ""} ${
+                              request.student?.middleName ?? ""
+                            } ${request.student?.lastName ?? ""} ${
+                              request.student?.suffix ?? ""
+                            }`.trim()}
+                          />
+                          <Field
+                            label="School ID"
+                            value={request.student?.schoolId}
+                          />
+                          <Field label="Email" value={request.student?.email} />
+                          <Field
+                            label="Contact number"
+                            value={request.student?.contactNumber}
+                          />
+                          <Field
+                            label="Gender"
+                            value={request.student?.gender}
+                          />
+                          <Field
+                            label="Birthdate"
+                            value={formatBirthdate(request.student?.birthdate)}
+                          />
+                          <Field
+                            label="Year level"
+                            value={request.student?.year}
+                          />
+                          <Field
+                            label="Campus"
+                            value={request.student?.campus}
+                          />
+                        </div>
+
+                        {/* ─── Request metadata ─────────────────────── */}
+                        <div className="rounded-lg bg-gray-50 p-4 grid gap-3 sm:grid-cols-2 text-sm">
+                          <Field label="Document type" value={typeLabel} />
+                          <Field label="Copies" value={request.copies} />
+                          <Field
+                            label="Purpose"
+                            value={request.purpose}
+                            className="sm:col-span-2"
+                          />
                           {request.status === "rejected" && request.remarks && (
                             <div className="sm:col-span-2">
                               <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-1">
@@ -322,7 +381,176 @@ export function DocumentRequestsView() {
                           )}
                         </div>
 
-                        {/* Actions per status */}
+                        {/* ─── TOR-only fields ──────────────────────── */}
+                        {tor && (
+                          <>
+                            {/* Purpose of Request */}
+                            {torPurpose && (
+                              <div className="rounded-lg bg-gray-50 p-4 text-sm">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                                  TOR Purpose of Request
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {torPurpose.employment && (
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                                      Employment ({torPurpose.employmentScope})
+                                    </span>
+                                  )}
+                                  {torPurpose.cavChed && (
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-violet-50 text-violet-700">
+                                      CAV-CHED ({torPurpose.cavScope})
+                                    </span>
+                                  )}
+                                  {torPurpose.boardExam && (
+                                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700">
+                                      Board Exam (
+                                      {torPurpose.boardExamType === "other"
+                                        ? torPurpose.boardExamOther || "Other"
+                                        : torPurpose.boardExamType.toUpperCase()}
+                                      )
+                                    </span>
+                                  )}
+                                  {!torPurpose.employment &&
+                                    !torPurpose.cavChed &&
+                                    !torPurpose.boardExam && (
+                                      <span className="text-gray-400">
+                                        None specified
+                                      </span>
+                                    )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TOR Personal Information */}
+                            {torStudent && (
+                              <div className="rounded-lg bg-gray-50 p-4 grid gap-3 sm:grid-cols-2 text-sm">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider sm:col-span-2">
+                                  TOR Personal Information
+                                </p>
+                                <Field
+                                  label="Last name"
+                                  value={torStudent.lastName}
+                                />
+                                <Field
+                                  label="First name"
+                                  value={torStudent.firstName}
+                                />
+                                <Field
+                                  label="Middle name"
+                                  value={torStudent.middleName}
+                                />
+                                <Field
+                                  label="Birthdate"
+                                  value={formatBirthdate(torStudent.birthdate)}
+                                />
+                                <Field
+                                  label="Birthplace"
+                                  value={torStudent.birthplace}
+                                />
+                                <Field
+                                  label="Gender"
+                                  value={torStudent.gender}
+                                />
+                                <Field
+                                  label="Contact number"
+                                  value={torStudent.contactNo}
+                                />
+                                <Field
+                                  label="Address"
+                                  value={torStudent.address}
+                                  className="sm:col-span-2"
+                                />
+                              </div>
+                            )}
+
+                            {/* Educational Background */}
+                            {torEdu && (
+                              <div className="rounded-lg bg-gray-50 p-4 text-sm">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                                  Educational Background
+                                </p>
+                                <div className="grid gap-4 sm:grid-cols-3">
+                                  <SchoolField
+                                    label="Elementary"
+                                    school={torEdu.elementary?.school}
+                                    yearGraduated={
+                                      torEdu.elementary?.yearGraduated
+                                    }
+                                  />
+                                  <SchoolField
+                                    label="High School"
+                                    school={torEdu.highSchool?.school}
+                                    yearGraduated={
+                                      torEdu.highSchool?.yearGraduated
+                                    }
+                                  />
+                                  <SchoolField
+                                    label="Senior High"
+                                    school={torEdu.seniorHigh?.school}
+                                    yearGraduated={
+                                      torEdu.seniorHigh?.yearGraduated
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Academic Information */}
+                            {torAcademic && (
+                              <div className="rounded-lg bg-gray-50 p-4 grid gap-3 sm:grid-cols-2 text-sm">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider sm:col-span-2">
+                                  Academic Information
+                                </p>
+                                <Field
+                                  label="Course"
+                                  value={torAcademic.course}
+                                />
+                                <Field
+                                  label="Major"
+                                  value={torAcademic.major}
+                                />
+                                <Field
+                                  label="Year graduated"
+                                  value={
+                                    torAcademic.notGraduated
+                                      ? "Not yet graduated"
+                                      : torAcademic.yearGraduated
+                                  }
+                                />
+                                <Field
+                                  label="Last semester attended"
+                                  value={
+                                    torAcademic.notGraduated
+                                      ? torAcademic.semester
+                                      : "—"
+                                  }
+                                />
+                                <Field
+                                  label="School year"
+                                  value={
+                                    torAcademic.notGraduated
+                                      ? torAcademic.schoolYear
+                                      : "—"
+                                  }
+                                />
+                              </div>
+                            )}
+
+                            {/* Fee */}
+                            {typeof tor.fee === "number" && tor.fee > 0 && (
+                              <div className="rounded-lg bg-gray-50 p-4 flex items-center justify-between text-sm">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                  Total Fee
+                                </p>
+                                <p className="text-base font-bold text-[#1B5A8C]">
+                                  ₱{tor.fee.toFixed(2)}
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* ─── Actions per status ───────────────────── */}
                         <div className="flex flex-wrap gap-2">
                           {request.status === "pending" && (
                             <button
