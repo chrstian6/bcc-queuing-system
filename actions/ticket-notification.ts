@@ -14,7 +14,11 @@ interface NotificationResult {
 }
 
 /**
- * Notify when a ticket is now being served
+ * Notify when a ticket is now being served.
+ *
+ * Uses `servingNotifiedAt` as an atomic claim marker:
+ * only the first caller to flip it from `null` sends the SMS/email.
+ * Any concurrent or repeated call afterwards returns without sending.
  */
 export async function notifyNowServing(
   ticketNumber: string,
@@ -23,15 +27,24 @@ export async function notifyNowServing(
   try {
     await connectDB();
 
-    const ticket = await Ticket.findOne({
-      ticketNumber,
-      status: "serving",
-    })
+    const now = new Date();
+
+    // Atomic claim — if two callers race, only one matches the filter
+    const ticket = await Ticket.findOneAndUpdate(
+      {
+        ticketNumber,
+        status: "serving",
+        servingNotifiedAt: null,
+      },
+      { $set: { servingNotifiedAt: now } },
+      { new: true },
+    )
       .select("ticketNumber ticketId transactionType requester student")
       .lean();
 
     if (!ticket) {
-      return { success: false, error: "Ticket not found" };
+      // Ticket doesn't exist, isn't serving, or was already notified
+      return { success: true, notified: false };
     }
 
     const ticketData = ticket as any;
@@ -43,7 +56,6 @@ export async function notifyNowServing(
 
     let notified = false;
 
-    // Send email notification
     if (recipientEmail) {
       const emailSent = await sendTicketNotificationEmail({
         email: recipientEmail,
@@ -58,7 +70,6 @@ export async function notifyNowServing(
       notified = emailSent;
     }
 
-    // Send SMS notification
     if (recipientPhone) {
       console.log("SMS: Sending serving notification to:", recipientPhone);
       await sendTicketNotificationSMS(
@@ -79,11 +90,7 @@ export async function notifyNowServing(
 }
 
 /**
- * Notify that they're next in line.
- *
- * Idempotent per-ticket: guarded by `youreNextNotifiedAt`. If the head of
- * the queue has already been notified (by an earlier call), this returns
- * successfully without re-sending.
+ * Notify "you're next" — guarded by `youreNextNotifiedAt`.
  */
 export async function notifyNextInLine(
   department: string,
@@ -94,7 +101,6 @@ export async function notifyNextInLine(
 
     const { start: today, end: tomorrow } = getAppDayRange();
 
-    // Only look at tickets that haven't been notified yet.
     const nextTicket = await Ticket.findOne({
       department: department as any,
       status: "pending" as any,
@@ -120,7 +126,6 @@ export async function notifyNextInLine(
 
     let notified = false;
 
-    // Send email notification
     if (recipientEmail) {
       const emailSent = await sendTicketNotificationEmail({
         email: recipientEmail,
@@ -135,7 +140,6 @@ export async function notifyNextInLine(
       notified = emailSent;
     }
 
-    // Send SMS notification
     if (recipientPhone) {
       console.log("SMS: Sending next-in-line notification to:", recipientPhone);
       await sendTicketNotificationSMS(
@@ -156,7 +160,7 @@ export async function notifyNextInLine(
 }
 
 /**
- * Notify the next two people in line
+ * Notify the next two people in line.
  */
 export async function notifyNextTwoInLine(
   department: string,
@@ -193,7 +197,6 @@ export async function notifyNextTwoInLine(
           `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
         const position = i + 1;
 
-        // Send email
         if (recipientEmail) {
           await sendTicketNotificationEmail({
             email: recipientEmail,
@@ -207,7 +210,6 @@ export async function notifyNextTwoInLine(
           });
         }
 
-        // Send SMS
         if (recipientPhone) {
           console.log(
             `SMS: Sending position ${position} notification to:`,
@@ -234,7 +236,7 @@ export async function notifyNextTwoInLine(
 }
 
 /**
- * Notify a skipped/cancelled ticket holder
+ * Notify a skipped/cancelled ticket holder.
  */
 export async function notifySkipped(
   ticketNumber: string,
@@ -263,7 +265,6 @@ export async function notifySkipped(
 
     let notified = false;
 
-    // Send email notification
     if (recipientEmail) {
       const emailSent = await sendTicketNotificationEmail({
         email: recipientEmail,
@@ -278,7 +279,6 @@ export async function notifySkipped(
       notified = emailSent;
     }
 
-    // Send SMS notification
     if (recipientPhone) {
       console.log("SMS: Sending skipped notification to:", recipientPhone);
       await sendTicketNotificationSMS(
@@ -299,7 +299,7 @@ export async function notifySkipped(
 }
 
 /**
- * Notify all waiting tickets in a department
+ * Notify all waiting tickets in a department.
  */
 export async function notifyAllWaiting(
   department: string,
@@ -333,7 +333,6 @@ export async function notifyAllWaiting(
         const studentName =
           `${ticketData.student?.firstName || ""} ${ticketData.student?.lastName || ""}`.trim();
 
-        // Send email
         if (recipientEmail) {
           await sendTicketNotificationEmail({
             email: recipientEmail,
@@ -345,7 +344,6 @@ export async function notifyAllWaiting(
           });
         }
 
-        // Send SMS
         if (recipientPhone) {
           await sendTicketNotificationSMS(
             recipientPhone,
