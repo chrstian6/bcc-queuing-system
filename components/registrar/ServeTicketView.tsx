@@ -147,6 +147,10 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
   const previousWaitingLengthRef = useRef(0);
   const previousCurrentTicketRef = useRef<Ticket | null>(null);
 
+  // Synchronous guard — state updates are async, so a fast double-click
+  // can pass the `isProcessing` check twice. This ref blocks it.
+  const busyRef = useRef(false);
+
   const showMessage = useCallback(
     (type: "success" | "error", message: string) => {
       if (messageTimerRef.current) clearTimeout(messageTimerRef.current);
@@ -186,7 +190,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
 
         const ticketsResult = await getStaffQueueData(staffId);
         if (ticketsResult?.success) {
-          // Filter tickets by role (dean sees only dean tickets, cashier sees only cashier tickets)
           let tickets: Ticket[] = ticketsResult.tickets;
           tickets = filterTicketsByRole(tickets, staffRole);
 
@@ -203,7 +206,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
               return dateA - dateB;
             });
 
-          // Check if there are tickets from previous days
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           const hasOldTickets = waiting.some((t) => {
@@ -303,6 +305,30 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     }
   };
 
+  /**
+   * The ONE place that calls serveTicket + notifyNowServing.
+   * Every UI path (Next button, auto-advance, Serve-from-list) funnels here,
+   * so the SMS can never fire more than once per successful serve.
+   */
+  const serveAndNotify = useCallback(
+    async (ticketNumber: string): Promise<boolean> => {
+      if (!user?.staffId) return false;
+
+      const result = await serveTicket(ticketNumber, user.staffId);
+      if (!result.success) {
+        showMessage("error", result.error || "Failed to serve ticket");
+        return false;
+      }
+
+      // Fire once. The idempotency guard on the server prevents
+      // duplicates even if this gets called twice by mistake.
+      await notifyNowServing(ticketNumber, user?.name || undefined);
+      await notifyNextTwoInLine(department, user?.name || undefined);
+      return true;
+    },
+    [user, department, showMessage],
+  );
+
   const autoServeNext = useCallback(async () => {
     if (!user?.staffId) return;
 
@@ -310,7 +336,6 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     if (!ticketsResult?.success) return;
 
     let tickets: Ticket[] = ticketsResult.tickets;
-    // Filter by role
     tickets = filterTicketsByRole(tickets, user.staffRole || department);
 
     const waiting = tickets
@@ -331,40 +356,37 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
     }
 
     const nextTicket = waiting[0];
-    const serveResult = await serveTicket(
-      nextTicket.ticketNumber,
-      user.staffId,
-    );
-
-    if (serveResult.success) {
-      notifyNowServing(nextTicket.ticketNumber, user?.name || undefined);
-      notifyNextTwoInLine(department, user?.name || undefined);
+    const ok = await serveAndNotify(nextTicket.ticketNumber);
+    if (ok) {
       await loadData(true);
       showMessage("success", `Now serving #${nextTicket.ticketNumber}`);
     }
-  }, [user, department, loadData, showMessage]);
+  }, [user, department, loadData, showMessage, serveAndNotify]);
 
   const handleServeNext = async (ticketNumber: string) => {
     if (!user?.staffId) {
       showMessage("error", "Staff ID not found. Please login again.");
       return;
     }
+
+    // Synchronous guard — prevents a fast double-click from firing twice
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     setError("");
     setSuccess("");
     setIsProcessing(true);
     try {
-      const result = await serveTicket(ticketNumber, user.staffId);
-      if (result.success) {
-        notifyNowServing(ticketNumber, user?.name || undefined);
+      const ok = await serveAndNotify(ticketNumber);
+      if (ok) {
         await loadData(true);
         showMessage("success", `Now serving ticket #${ticketNumber}`);
-      } else {
-        showMessage("error", result.error || "Failed to serve ticket");
       }
     } catch {
       showMessage("error", "An error occurred");
     } finally {
       setIsProcessing(false);
+      busyRef.current = false;
     }
   };
 
@@ -374,16 +396,21 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       return;
     }
 
+    // Synchronous guard — same reason as handleServeNext
+    if (busyRef.current) return;
+
     if (!currentTicket && waitingTickets.length === 0) {
       showMessage("error", "No tickets in queue");
       return;
     }
 
+    // Early-return branch — delegate to handleServeNext which has its own guard
     if (!currentTicket && waitingTickets.length > 0) {
       await handleServeNext(waitingTickets[0].ticketNumber);
       return;
     }
 
+    busyRef.current = true;
     setIsProcessing(true);
     try {
       if (currentTicket) {
@@ -395,17 +422,21 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       showMessage("error", "An error occurred");
     } finally {
       setIsProcessing(false);
+      busyRef.current = false;
     }
   };
 
   const handleSkip = async () => {
     if (!user?.staffId || !currentTicket) return;
 
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     const skippedTicketNumber = currentTicket.ticketNumber;
     setIsProcessing(true);
     try {
       await cancelTicket(skippedTicketNumber);
-      notifySkipped(skippedTicketNumber, user?.name || undefined);
+      await notifySkipped(skippedTicketNumber, user?.name || undefined);
       await autoServeNext();
       showMessage("success", `Skipped #${skippedTicketNumber}`);
     } catch (err) {
@@ -413,11 +444,16 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       showMessage("error", "An error occurred");
     } finally {
       setIsProcessing(false);
+      busyRef.current = false;
     }
   };
 
   const handleComplete = async () => {
     if (!currentTicket || !user?.staffId) return;
+
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     setIsProcessing(true);
     try {
       const result = await completeServedTicket(
@@ -437,6 +473,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
       showMessage("error", "An error occurred");
     } finally {
       setIsProcessing(false);
+      busyRef.current = false;
     }
   };
 
