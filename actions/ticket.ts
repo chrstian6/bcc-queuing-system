@@ -776,6 +776,11 @@ export async function getReportsTickets(
 // Staff functions
 // ============================================================
 
+/**
+ * Queue data for ONE staff member (e.g. a single cashier):
+ * - pending tickets assigned to them
+ * - the ticket they are currently serving
+ */
 export async function getStaffQueueData(staffId: string) {
   try {
     const session = await requireSelfStaffOrAdmin(staffId);
@@ -794,7 +799,10 @@ export async function getStaffQueueData(staffId: string) {
 
     const query: any = {
       department: department,
-      status: { $in: ["pending", "serving"] },
+      $or: [
+        { status: "pending", assignedTo: staffId },
+        { status: "serving", servedBy: staffId },
+      ],
     };
 
     const tickets = await Ticket.find(query as any)
@@ -934,13 +942,18 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
 
     const staffData = staff as any;
     const department = resolveDepartment(staffData, session);
+    const { start: today, end: tomorrow } = getAppDayRange();
     const now = new Date();
 
+    // Ticket numbers are per-staff counters, so "1" exists for every cashier
+    // every day. Scope by assignedTo + today to hit exactly the right ticket.
     const ticket = await Ticket.findOneAndUpdate(
       {
         ticketNumber,
         status: "pending",
         department: department,
+        assignedTo: staffId,
+        createdAt: { $gte: today, $lt: tomorrow },
       } as any,
       {
         $set: {
@@ -1310,19 +1323,25 @@ export async function cancelTicket(ticketNumber: string) {
     );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
-    const changedBy =
-      session.user.role === ROLES.ADMIN
-        ? "admin"
-        : session.user.staffId || "staff";
+    const isAdmin = session.user.role === ROLES.ADMIN;
+    const changedBy = isAdmin ? "admin" : session.user.staffId || "staff";
 
     await connectDB();
     const now = new Date();
 
+    const filter: any = {
+      ticketNumber,
+      status: { $in: ["pending", "serving"] },
+    };
+
+    // Ticket numbers repeat across staff, so non-admins can only cancel
+    // tickets assigned to them or currently served by them.
+    if (!isAdmin) {
+      filter.$or = [{ assignedTo: changedBy }, { servedBy: changedBy }];
+    }
+
     const ticket = await Ticket.findOneAndUpdate(
-      {
-        ticketNumber,
-        status: { $in: ["pending", "serving"] },
-      } as any,
+      filter as any,
       {
         $set: {
           status: "cancelled",

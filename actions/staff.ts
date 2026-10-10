@@ -268,6 +268,38 @@ export async function getAllStaff() {
   }
 }
 
+/**
+ * PUBLIC (no auth) — used by the live queue display (/live-queue) to show
+ * which cashier is at which window. Returns ONLY the window and display
+ * name of active cashiers; no emails, IDs, or other staff data.
+ */
+export async function getPublicCashierWindows(): Promise<{
+  success: boolean;
+  windows: { window: string; name: string }[];
+}> {
+  try {
+    await connectDB();
+    const cashiers = await Staff.find({
+      roleName: "cashier",
+      status: "active",
+    } as any)
+      .select("firstName lastName cashierWindow")
+      .lean();
+
+    const windows = (cashiers as any[])
+      .map((s) => ({
+        window: String(s.cashierWindow || "").trim(),
+        name: `${s.firstName || ""} ${s.lastName || ""}`.trim(),
+      }))
+      .filter((w) => w.window && w.name);
+
+    return { success: true, windows };
+  } catch (error) {
+    console.error("Error fetching public cashier windows:", error);
+    return { success: false, windows: [] };
+  }
+}
+
 export async function getStaffById(staffId: string) {
   try {
     const session = await requireRole(
