@@ -4,7 +4,8 @@
 import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Clock, Activity, Timer } from "lucide-react";
+import { ArrowLeft, Clock, Activity, Timer, User } from "lucide-react";
+import { getPublicCashierQueues } from "@/actions/public-queue";
 
 const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 
@@ -26,11 +27,13 @@ interface QueueItem {
   createdAt: string;
   status: string;
   student?: StudentInfo;
+  maskedName?: string;
 }
 
 interface DepartmentQueue {
   department: string;
   displayName: string;
+  staffName: string | null;
   serving: string | null;
   waiting: number;
   waitingList: QueueItem[];
@@ -99,6 +102,28 @@ function normalizeWaiting(...candidates: unknown[]): number {
     if (Number.isFinite(n) && n >= 0) return n;
   }
   return 0;
+}
+
+/**
+ * Reads the staff (cashier) name for a window from whichever field the API
+ * sends: staffName / staff_name / cashierName, or a nested staff object.
+ */
+function normalizeStaffName(raw: any): string | null {
+  const direct =
+    raw?.staffName ??
+    raw?.staff_name ??
+    raw?.cashierName ??
+    raw?.cashier_name ??
+    null;
+  if (direct && String(direct).trim()) return String(direct).trim();
+
+  const staff = raw?.staff;
+  if (staff && typeof staff === "object") {
+    const full =
+      staff.name ?? [staff.firstName, staff.lastName].filter(Boolean).join(" ");
+    if (full && String(full).trim()) return String(full).trim();
+  }
+  return null;
 }
 
 function servingFromList(list: any): string | null {
@@ -211,6 +236,7 @@ function normalizeDepartment(raw: any): DepartmentQueue {
         raw?.department ??
         "",
     ),
+    staffName: normalizeStaffName(raw),
     serving,
     waiting,
     waitingList: list,
@@ -222,15 +248,16 @@ function normalizeDepartment(raw: any): DepartmentQueue {
 interface WindowState {
   department: string;
   displayName: string;
+  staffName: string | null;
   serving: string | null;
   waiting: number;
   waitingList: QueueItem[];
 }
 
 /**
- * Distribute the aggregate cashier waitingList across N windows.
- * - The first N-1 tickets (pending) go to windows 1..N round-robin.
- * - The serving ticket (if any) is shown on Window 1.
+ * Fallback only: used when the API doesn't send per-window entries
+ * (cashier-1, cashier-2, cashier-3). It spreads the aggregate cashier list
+ * round-robin, so it can't know which staff member owns which ticket.
  */
 function splitCashierAcrossWindows(
   cashierDept: DepartmentQueue | undefined,
@@ -239,6 +266,7 @@ function splitCashierAcrossWindows(
   const empty: WindowState[] = Array.from({ length: windowCount }, (_, i) => ({
     department: `cashier-${i + 1}`,
     displayName: `Window ${i + 1}`,
+    staffName: null,
     serving: null,
     waiting: 0,
     waitingList: [],
@@ -264,6 +292,7 @@ function splitCashierAcrossWindows(
   return empty.map((win, idx) => ({
     department: win.department,
     displayName: win.displayName,
+    staffName: null,
     serving: idx === 0 ? cashierDept.serving : null,
     waiting: buckets[idx].length,
     waitingList: buckets[idx],
@@ -583,6 +612,7 @@ function QueueCard({ label, serving, waiting }: QueueCardProps) {
 
 interface WindowColumnProps {
   displayName: string;
+  staffName: string | null;
   serving: string | null;
   waiting: number;
   waitingList: QueueItem[];
@@ -590,6 +620,7 @@ interface WindowColumnProps {
 
 function WindowColumn({
   displayName,
+  staffName,
   serving,
   waiting,
   waitingList,
@@ -601,7 +632,7 @@ function WindowColumn({
     <div className="border border-gray-100 rounded-xl overflow-hidden flex flex-col">
       {/* Column header */}
       <div className="p-4 border-b border-gray-100 bg-gray-50/60">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-1">
           <span
             className={`w-2 h-2 rounded-full ${
               serving ? "bg-green-500 animate-pulse" : "bg-gray-300"
@@ -612,6 +643,20 @@ function WindowColumn({
             style={FONT}
           >
             {displayName}
+          </span>
+        </div>
+
+        {/* Staff name for this window */}
+        <div className="flex items-center gap-1.5 mb-3 pl-4">
+          <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
+          <span
+            className={`text-sm font-semibold truncate ${
+              staffName ? "text-gray-700" : "text-gray-300"
+            }`}
+            style={FONT}
+            title={staffName || undefined}
+          >
+            {staffName || "No staff assigned"}
           </span>
         </div>
 
@@ -689,9 +734,11 @@ function WindowColumn({
                   className="text-[10px] text-gray-400 font-medium truncate max-w-[45%] text-right"
                   style={FONT}
                 >
-                  {ticket.student
-                    ? maskStudentName(ticket.student)
-                    : ticket.transactionType}
+                  {ticket.maskedName
+                    ? ticket.maskedName
+                    : ticket.student
+                      ? maskStudentName(ticket.student)
+                      : ticket.transactionType}
                 </span>
               </div>
             ))}
@@ -711,10 +758,12 @@ function LiveQueueContent() {
   const [selectedDept, setSelectedDept] = useState<string>("all");
   const [history, setHistory] = useState<DataPoint[]>([]);
   const [queueStatus, setQueueStatus] = useState<QueueStatusInfo | null>(null);
+  const [cashierQueues, setCashierQueues] = useState<
+    Record<number, WindowState>
+  >({});
+  const [queuesLoaded, setQueuesLoaded] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useVoiceAnnouncements(departments);
 
   const connect = () => {
     if (eventSourceRef.current) eventSourceRef.current.close();
@@ -780,6 +829,71 @@ function LiveQueueContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Per-window cashier queues. Each cashier's window comes from their
+  // cashierWindow field (first number in "1", "Window 1", etc.), and each
+  // ticket is placed under the cashier it is assigned to.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCashierQueues = async () => {
+      try {
+        const result = await getPublicCashierQueues();
+        if (cancelled || !result.success) return;
+
+        const map: Record<number, WindowState> = {};
+        for (const q of result.queues) {
+          if (q.window == null) continue;
+
+          const items: QueueItem[] = q.waiting.map((t) => ({
+            _id: t.id,
+            ticketNumber: t.ticketNumber,
+            transactionType: t.transactionType,
+            department: "cashier",
+            createdAt: t.createdAt,
+            status: "pending",
+            maskedName: t.maskedName,
+          }));
+
+          const existing = map[q.window];
+          if (existing) {
+            // Two cashiers set to the same window: combine them
+            existing.staffName = existing.staffName
+              ? `${existing.staffName}, ${q.staffName}`
+              : q.staffName;
+            existing.serving = existing.serving ?? q.serving;
+            existing.waitingList = [...existing.waitingList, ...items].sort(
+              (a, b) =>
+                new Date(a.createdAt).getTime() -
+                new Date(b.createdAt).getTime(),
+            );
+            existing.waiting = existing.waitingList.length;
+          } else {
+            map[q.window] = {
+              department: `cashier-${q.window}`,
+              displayName: `Window ${q.window}`,
+              staffName: q.staffName || null,
+              serving: q.serving,
+              waiting: items.length,
+              waitingList: items,
+            };
+          }
+        }
+
+        setCashierQueues(map);
+        setQueuesLoaded(true);
+      } catch (err) {
+        console.error("Error loading cashier queues:", err);
+      }
+    };
+
+    loadCashierQueues();
+    const interval = setInterval(loadCashierQueues, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   const formatTime = (date: Date | null) => {
     if (!date) return "—";
     return date.toLocaleTimeString([], {
@@ -816,19 +930,55 @@ function LiveQueueContent() {
     d.department.startsWith("cashier-"),
   );
 
-  const cashierWindows: WindowState[] = hasPerWindowEntries
+  const baseCashierWindows: WindowState[] = hasPerWindowEntries
     ? Array.from({ length: CASHIER_WINDOW_COUNT }, (_, i) => {
         const key = `cashier-${i + 1}`;
         const found = departments.find((d) => d.department === key);
         return {
           department: key,
           displayName: found?.displayName || `Window ${i + 1}`,
+          staffName: found?.staffName ?? null,
           serving: found?.serving ?? null,
           waiting: found?.waiting ?? 0,
           waitingList: found?.waitingList ?? [],
         };
       })
     : splitCashierAcrossWindows(cashierDept, CASHIER_WINDOW_COUNT);
+
+  // Window N = the cashier whose cashierWindow is N, with only the tickets
+  // assigned to them. Until the first load finishes, use the stream's
+  // fallback split so the page isn't empty.
+  const cashierWindows: WindowState[] = queuesLoaded
+    ? Array.from(
+        { length: CASHIER_WINDOW_COUNT },
+        (_, i) =>
+          cashierQueues[i + 1] ?? {
+            department: `cashier-${i + 1}`,
+            displayName: `Window ${i + 1}`,
+            staffName: null,
+            serving: null,
+            waiting: 0,
+            waitingList: [],
+          },
+      )
+    : baseCashierWindows;
+
+  // Voice: Dean from the stream, cashier windows from the per-cashier data
+  // (only once loaded, so the first load doesn't trigger an announcement).
+  const voiceDepartments: DepartmentQueue[] = [
+    ...departments.filter((d) => d.department === "dean"),
+    ...(queuesLoaded
+      ? cashierWindows.map((w) => ({
+          department: w.department,
+          displayName: w.displayName,
+          staffName: w.staffName,
+          serving: w.serving,
+          waiting: w.waiting,
+          waitingList: w.waitingList,
+        }))
+      : []),
+  ];
+  useVoiceAnnouncements(voiceDepartments);
 
   return (
     <div className="min-h-screen bg-white">
@@ -944,6 +1094,7 @@ function LiveQueueContent() {
               <WindowColumn
                 key={win.department}
                 displayName={win.displayName}
+                staffName={win.staffName}
                 serving={win.serving}
                 waiting={win.waiting}
                 waitingList={win.waitingList}

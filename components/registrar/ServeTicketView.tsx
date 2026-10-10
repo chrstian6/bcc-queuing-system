@@ -41,6 +41,7 @@ interface Ticket {
   ticketNumber: string;
   status: "pending" | "serving" | "completed" | "cancelled" | string;
   servedBy?: string;
+  assignedTo?: string | null;
   servedAt?: string;
   createdAt?: string;
   transactionType?: string;
@@ -69,6 +70,20 @@ function formatElapsedTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+/**
+ * Keep only this staff member's tickets:
+ * - the ticket they are serving
+ * - pending tickets assigned to them
+ * Ticket numbers repeat across staff, so we scope by staffId, not by number.
+ */
+function scopeToStaff(tickets: Ticket[], staffId: string): Ticket[] {
+  return tickets.filter(
+    (t) =>
+      (t.status === "serving" && t.servedBy === staffId) ||
+      (t.status === "pending" && t.assignedTo === staffId),
+  );
 }
 
 function ServeSkeleton() {
@@ -192,6 +207,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
         if (ticketsResult?.success) {
           let tickets: Ticket[] = ticketsResult.tickets;
           tickets = filterTicketsByRole(tickets, staffRole);
+          tickets = scopeToStaff(tickets, staffId);
 
           const serving =
             tickets.find(
@@ -337,6 +353,7 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
 
     let tickets: Ticket[] = ticketsResult.tickets;
     tickets = filterTicketsByRole(tickets, user.staffRole || department);
+    tickets = scopeToStaff(tickets, user.staffId);
 
     const waiting = tickets
       .filter((t) => t.status === "pending")
