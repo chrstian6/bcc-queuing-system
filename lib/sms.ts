@@ -159,6 +159,41 @@ export async function checkSMSStatus(
 }
 
 /**
+ * Estimated time to receive a document after it is accepted, based on the
+ * document type label:
+ *   - 2 weeks: TOR, Good Moral, Certificate of Diploma, Certificate of Graduate
+ *   - 2 days:  COE, COR, Grades
+ * Any other document type returns null (no estimate in the SMS).
+ */
+function getEstimatedReceive(documentTypeLabel: string): string | null {
+  const label = documentTypeLabel.toLowerCase();
+
+  // 2 weeks
+  if (
+    /\btor\b/.test(label) ||
+    label.includes("transcript") ||
+    label.includes("good moral") ||
+    label.includes("diploma") ||
+    label.includes("graduat")
+  ) {
+    return "2 weeks";
+  }
+
+  // 2 days
+  if (
+    /\bcoe\b/.test(label) ||
+    /\bcor\b/.test(label) ||
+    label.includes("enrollment") ||
+    label.includes("registration") ||
+    label.includes("grade")
+  ) {
+    return "2 days";
+  }
+
+  return null;
+}
+
+/**
  * Send SMS notification for document requests
  */
 export async function sendDocumentRequestSMS(
@@ -184,14 +219,21 @@ export async function sendDocumentRequestSMS(
     console.log("Remarks:", remarks || "None");
     console.log("=========================================");
 
+    const estimate = getEstimatedReceive(documentTypeLabel);
+    const estimateNote = estimate
+      ? ` Estimated to receive: ${estimate} after acceptance.`
+      : "";
+
     let message = "";
 
     switch (status) {
       case "submitted":
-        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is PENDING. We'll text you again once there's an update.`;
+        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is PENDING.${
+          estimateNote || " We'll text you again once there's an update."
+        }`;
         break;
       case "processing":
-        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is now being processed.`;
+        message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is now being processed.${estimateNote}`;
         break;
       case "ready-for-pickup":
         message = `BCC Document Request: Hi ${studentName}, your request ${requestId} for ${documentTypeLabel} is ready for pickup at the Registrar's Office.`;
@@ -206,9 +248,11 @@ export async function sendDocumentRequestSMS(
         message = `BCC Document Request: Hi ${studentName}, your request ${requestId} status has been updated to ${status}.`;
     }
 
-    // Limit message length (SMS max is typically 160 characters)
-    if (message.length > 160) {
-      message = message.substring(0, 157) + "...";
+    // Limit message length. Raised to 2 SMS segments (306 chars) so the
+    // estimate at the end isn't cut off by the old 160-character cap.
+    const MAX_SMS_LENGTH = 306;
+    if (message.length > MAX_SMS_LENGTH) {
+      message = message.substring(0, MAX_SMS_LENGTH - 3) + "...";
     }
 
     console.log("Sending SMS with message:", message);

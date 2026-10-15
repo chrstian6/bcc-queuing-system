@@ -56,11 +56,14 @@ export interface ITorDetails {
     major: string;
     yearGraduated: string;
     notGraduated: boolean;
+    freshGraduate: boolean;
     semester: "1st" | "2nd" | "Summer";
     schoolYear: string;
   };
   educationalBackground: ITorEducationalBackground;
   fee: number;
+  /** Set by the server: true when a fresh graduate's first TOR is free. */
+  feeWaived: boolean;
 }
 
 export interface IDocumentRequest extends Document {
@@ -158,6 +161,7 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
           major: { type: String, default: "" },
           yearGraduated: { type: String, default: "" },
           notGraduated: { type: Boolean, default: false },
+          freshGraduate: { type: Boolean, default: false },
           semester: {
             type: String,
             enum: ["1st", "2nd", "Summer"],
@@ -180,6 +184,7 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
           },
         },
         fee: { type: Number, default: 0 },
+        feeWaived: { type: Boolean, default: false },
       },
       default: null,
     },
@@ -212,6 +217,13 @@ const documentRequestSchema = new mongoose.Schema<IDocumentRequest>(
 
 documentRequestSchema.index({ userId: 1, createdAt: -1 });
 documentRequestSchema.index({ status: 1, createdAt: -1 });
+// Speeds up the "first TOR?" lookup for fresh graduates
+documentRequestSchema.index({
+  documentType: 1,
+  "torDetails.student.lastName": 1,
+  "torDetails.student.firstName": 1,
+  "torDetails.student.birthdate": 1,
+});
 
 documentRequestSchema.pre("save", function () {
   if (this.isNew && this.statusHistory.length === 0) {

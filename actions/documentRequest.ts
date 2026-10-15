@@ -27,7 +27,7 @@ import {
 import type { TorFormData } from "@/components/public/TranscriptOfRecordsForm";
 
 const ACTIVE_STATUSES = ["pending", "processing", "ready-for-pickup"];
-const SMS_STATUSES = ["released", "rejected"];
+const SMS_STATUSES = ["processing", "released", "rejected"];
 
 interface DocumentRequestResponse {
   success: boolean;
@@ -44,6 +44,17 @@ function revalidateDocumentPaths() {
   revalidatePath("/student/dashboard");
   revalidatePath("/staff/registrar/requests");
   revalidatePath("/staff/registrar/dashboard");
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Case-insensitive exact match for a name field.
+ */
+function exactNameMatch(value: string) {
+  return new RegExp(`^${escapeRegex(value.trim())}$`, "i");
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -163,6 +174,18 @@ export async function createDocumentRequest(data: {
           purpose: input.purpose,
           notificationType: "submitted",
         }).catch((err) => console.error("Document request email failed:", err));
+
+        if (user.contactNumber) {
+          sendDocumentRequestSMS(
+            user.contactNumber,
+            studentName,
+            requestId,
+            documentTypeLabel,
+            "submitted",
+          ).catch((err) =>
+            console.error("Document request submit SMS failed:", err),
+          );
+        }
 
         revalidateDocumentPaths();
 
@@ -322,11 +345,12 @@ export async function createPublicDocumentRequest(
         const documentTypeLabel =
           DOCUMENT_TYPE_LABELS[data.documentType as DocumentType] ||
           data.documentType;
+        const studentName = `${firstName} ${lastName}`.trim();
 
         if (email) {
           sendDocumentRequestEmail({
             email,
-            studentName: `${firstName} ${lastName}`.trim(),
+            studentName,
             requestId,
             documentTypeLabel,
             copies,
@@ -334,6 +358,18 @@ export async function createPublicDocumentRequest(
             notificationType: "submitted",
           }).catch((err) =>
             console.error("Public document request email failed:", err),
+          );
+        }
+
+        if (contactNumber) {
+          sendDocumentRequestSMS(
+            contactNumber,
+            studentName,
+            requestId,
+            documentTypeLabel,
+            "submitted",
+          ).catch((err) =>
+            console.error("Public document request submit SMS failed:", err),
           );
         }
 
@@ -392,12 +428,37 @@ export async function createPublicTorRequest(
     }
     const purposeString = purposes.join(", ") || "Transcript of Records";
 
+    // A fresh graduate must actually be a graduate.
+    const isFreshGraduate =
+      !!(torData.academic as any).freshGraduate &&
+      !torData.academic.notGraduated;
+
     await connectDB();
 
     const result = await withIdempotency<DocumentRequestResponse>(
       `publicTorRequest:${idempotencyKey}`,
       async () => {
         const { start: today, dateStr } = getAppDayRange();
+
+        // ── Fresh graduate + first TOR = free ─────────────────────────
+        // "First time" = no earlier non-rejected TOR request with the same
+        // name and birthdate.
+        let feeWaived = false;
+        if (isFreshGraduate) {
+          const previousTor = await DocumentRequest.exists({
+            documentType: "tor",
+            status: { $ne: "rejected" },
+            "torDetails.student.lastName": exactNameMatch(
+              torData.student.lastName || "",
+            ),
+            "torDetails.student.firstName": exactNameMatch(
+              torData.student.firstName || "",
+            ),
+            "torDetails.student.birthdate": torData.student.birthdate || "",
+          });
+          feeWaived = !previousTor;
+        }
+        const finalFee = feeWaived ? 0 : torData.fee;
 
         const counter = await Counter.findOneAndUpdate(
           { _id: `DOCREQ-${dateStr}` },
@@ -458,6 +519,7 @@ export async function createPublicTorRequest(
               major: torData.academic.major,
               yearGraduated: torData.academic.yearGraduated,
               notGraduated: torData.academic.notGraduated,
+              freshGraduate: isFreshGraduate,
               semester: torData.academic.semester,
               schoolYear: torData.academic.schoolYear,
             },
@@ -478,12 +540,33 @@ export async function createPublicTorRequest(
                   torData.educationalBackground.seniorHigh.yearGraduated,
               },
             },
-            fee: torData.fee,
+            fee: finalFee,
+            feeWaived,
           },
           status: "pending",
         });
 
         await request.save();
+
+        const torContactNumber = (torData.student.contactNo || "").replace(
+          /\s/g,
+          "",
+        );
+        if (torContactNumber) {
+          const torStudentName =
+            `${torData.student.firstName} ${torData.student.lastName}`.trim();
+          const torLabel =
+            DOCUMENT_TYPE_LABELS["tor" as DocumentType] ||
+            "Transcript of Records";
+
+          sendDocumentRequestSMS(
+            torContactNumber,
+            torStudentName,
+            requestId,
+            torLabel,
+            "submitted",
+          ).catch((err) => console.error("Public TOR submit SMS failed:", err));
+        }
 
         revalidateDocumentPaths();
 

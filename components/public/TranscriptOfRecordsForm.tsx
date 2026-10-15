@@ -48,6 +48,7 @@ export interface TorFormData {
     major: string;
     yearGraduated: string;
     notGraduated: boolean;
+    freshGraduate: boolean;
     semester: "1st" | "2nd" | "Summer";
     schoolYear: string;
   };
@@ -106,6 +107,7 @@ export default function TranscriptOfRecordsForm({
     major: "",
     yearGraduated: "",
     notGraduated: false,
+    freshGraduate: false,
     semester: "1st",
     schoolYear: "",
   });
@@ -131,12 +133,16 @@ export default function TranscriptOfRecordsForm({
 
   const estimatedFee = OTR_FEE + (purpose.cavChed ? CAV_FEE + AUTH_OTR_FEE : 0);
 
+  // A fresh graduate must actually be a graduate. The server makes the final
+  // decision (first request only), this just drives what the form displays.
+  const isFreshGraduate = academic.freshGraduate && !academic.notGraduated;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
       purpose,
       student,
-      academic,
+      academic: { ...academic, freshGraduate: isFreshGraduate },
       educationalBackground,
       fee: estimatedFee,
     });
@@ -438,7 +444,12 @@ export default function TranscriptOfRecordsForm({
               id="notGraduated"
               checked={academic.notGraduated}
               onCheckedChange={(v) =>
-                updateAcademic("notGraduated", v === true)
+                setAcademic((a) => ({
+                  ...a,
+                  notGraduated: v === true,
+                  // Not-yet-graduated students can't be fresh graduates
+                  freshGraduate: v === true ? false : a.freshGraduate,
+                }))
               }
             />
             <Label
@@ -449,6 +460,31 @@ export default function TranscriptOfRecordsForm({
               Not yet graduated
             </Label>
           </div>
+
+          {/* Fresh graduate */}
+          {!academic.notGraduated && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="freshGraduate"
+                  checked={academic.freshGraduate}
+                  onCheckedChange={(v) =>
+                    updateAcademic("freshGraduate", v === true)
+                  }
+                />
+                <Label
+                  htmlFor="freshGraduate"
+                  className="text-sm font-medium text-[#0F172A]"
+                  style={labelStyle}
+                >
+                  Fresh graduate
+                </Label>
+              </div>
+              <p className="ml-6 mt-1 text-xs text-gray-500" style={labelStyle}>
+                Your first TOR request is free if you are a fresh graduate.
+              </p>
+            </div>
+          )}
 
           {academic.notGraduated && (
             <>
@@ -495,16 +531,31 @@ export default function TranscriptOfRecordsForm({
           <p className="text-sm font-medium text-[#0F172A]">
             OTR (for Employment)
           </p>
-          {purpose.cavChed && (
-            <p className="text-xs text-gray-500">
-              + CAV authentication (₱{CAV_FEE}) + OTR authentication (₱
-              {AUTH_OTR_FEE}/set)
+          {isFreshGraduate ? (
+            <p className="text-xs text-emerald-600">
+              Fresh graduate: first request is free
             </p>
+          ) : (
+            purpose.cavChed && (
+              <p className="text-xs text-gray-500">
+                + CAV authentication (₱{CAV_FEE}) + OTR authentication (₱
+                {AUTH_OTR_FEE}/set)
+              </p>
+            )
           )}
         </div>
-        <p className="text-lg font-bold text-[#0000CC]" style={labelStyle}>
-          ₱{estimatedFee}.00
-        </p>
+        {isFreshGraduate ? (
+          <div className="text-right" style={labelStyle}>
+            <p className="text-xs text-gray-400 line-through">
+              ₱{estimatedFee}.00
+            </p>
+            <p className="text-lg font-bold text-emerald-600">FREE</p>
+          </div>
+        ) : (
+          <p className="text-lg font-bold text-[#0000CC]" style={labelStyle}>
+            ₱{estimatedFee}.00
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3">
