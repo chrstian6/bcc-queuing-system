@@ -29,6 +29,9 @@ export interface IStaff extends Document {
   cashierWindow: string;
   status: "active" | "inactive" | "suspended";
   mustChangePassword: boolean;
+  passwordResetPin?: string;
+  passwordResetExpires?: Date;
+  passwordResetAttempts?: number;
   counterSettings?: ICounterSettings;
   createdAt: Date;
   updatedAt: Date;
@@ -96,6 +99,20 @@ const staffSchema = new mongoose.Schema<IStaff>(
     mustChangePassword: {
       type: Boolean,
       default: true,
+    },
+    // Forgot-password flow: hashed 6-digit PIN, expiry, and wrong-guess counter
+    passwordResetPin: {
+      type: String,
+      select: false,
+    },
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
+    passwordResetAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
     },
     // Per-counter queue controls (cashier-managed). Older docs lack this path
     // and .lean() skips defaults — read through getEffectiveCounterSettings().
