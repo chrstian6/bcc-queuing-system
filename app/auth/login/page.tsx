@@ -7,6 +7,7 @@ import { Plus_Jakarta_Sans, Geist, Fraunces } from "next/font/google";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
 import { loginAction } from "@/actions/auth";
 import { AuthRightColumn } from "@/components/auth/AuthRightColumn";
+import ForgotPasswordModal from "@/components/ForgotPasswordModal";
 
 // ─── Fonts ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
 
   const activePortal = PORTALS.find((p) => p.id === portal)!;
 
@@ -229,13 +231,17 @@ export default function LoginPage() {
                   >
                     Password
                   </label>
-                  <Link
-                    href="/auth/forgot-password"
-                    className="text-xs font-medium text-[#0000CC] hover:underline"
-                    style={{ fontFamily: "var(--font-geist-sans)" }}
-                  >
-                    Forgot password?
-                  </Link>
+                  {portal === "staff" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowForgot(true)}
+                      disabled={isLoading}
+                      className="text-xs font-medium text-[#0000CC] hover:underline disabled:opacity-50"
+                      style={{ fontFamily: "var(--font-geist-sans)" }}
+                    >
+                      Forgot password?
+                    </button>
+                  )}
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8] peer-focus:text-[#0000CC] transition-colors" />
@@ -349,6 +355,13 @@ export default function LoginPage() {
 
       {/* ── Right column — static text with repulsion ── */}
       <AuthRightColumn />
+
+      {/* ── Forgot password modal ── */}
+      <ForgotPasswordModal
+        open={showForgot}
+        onClose={() => setShowForgot(false)}
+        defaultEmail={email}
+      />
     </div>
   );
 }
