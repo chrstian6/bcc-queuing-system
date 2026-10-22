@@ -26,8 +26,6 @@ interface StudentData {
   lastName: string;
   middleName?: string;
   suffix?: string;
-  gender: string;
-  birthdate: string;
   year: string;
   campus: string;
 }
@@ -69,8 +67,6 @@ interface TicketResponse {
       lastName: string;
       middleName?: string;
       suffix?: string;
-      gender?: string;
-      birthdate?: string;
       year: string;
       campus: string;
     };
@@ -126,10 +122,6 @@ function resolveDepartment(staffData: any, session: any): string {
 /**
  * Fire a "you're next" notification to the current head of the queue,
  * but only if that ticket hasn't been notified before.
- *
- * Uses `youreNextNotifiedAt` as an atomic guard so concurrent calls can't
- * double-notify the same ticket. Safe to call after every pending -> serving
- * transition. Never throws — best-effort side effect.
  */
 async function notifyHeadOfQueueOnce(
   department: string,
@@ -138,8 +130,6 @@ async function notifyHeadOfQueueOnce(
   try {
     const { start: today, end: tomorrow } = getAppDayRange();
 
-    // Atomically claim the head of the queue. If two callers race,
-    // only one will find `youreNextNotifiedAt: null` and update it.
     const head = await Ticket.findOneAndUpdate(
       {
         department: department as any,
@@ -151,11 +141,8 @@ async function notifyHeadOfQueueOnce(
       { sort: { createdAt: 1 }, new: true },
     ).lean();
 
-    if (!head) return; // no un-notified pending tickets
+    if (!head) return;
 
-    // Delegate to the notification action. It re-queries the same head
-    // (sort order matches), so the person pinged is guaranteed to be the
-    // one we just marked.
     await notifyNextInLine(department, staffName).catch((err) =>
       console.error("notifyNextInLine failed:", err),
     );
@@ -223,14 +210,6 @@ export async function createTicket(
 
   if (!data.student.firstName || !data.student.lastName) {
     return { success: false, error: "Student information is incomplete" };
-  }
-
-  if (!data.student.gender) {
-    return { success: false, error: "Gender is required" };
-  }
-
-  if (!data.student.birthdate) {
-    return { success: false, error: "Birthdate is required" };
   }
 
   if (!data.student.year || !data.student.campus) {
@@ -363,8 +342,6 @@ export async function createTicket(
                 lastName: data.student.lastName,
                 middleName: data.student.middleName || "",
                 suffix: data.student.suffix || "",
-                gender: data.student.gender || "",
-                birthdate: data.student.birthdate || "",
                 year: data.student.year,
                 campus: data.student.campus,
               },
@@ -444,8 +421,6 @@ export async function createTicket(
                   lastName: ticketObj.student.lastName,
                   middleName: ticketObj.student.middleName || "",
                   suffix: ticketObj.student.suffix || "",
-                  gender: ticketObj.student.gender || "",
-                  birthdate: ticketObj.student.birthdate || "",
                   year: ticketObj.student.year,
                   campus: ticketObj.student.campus,
                 },
