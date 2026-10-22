@@ -16,9 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   YearLevel,
   Campus,
-  Gender,
   YEAR_LEVELS,
-  GENDERS,
   getCampusForYearLevel,
 } from "@/types/ticket";
 import { createTicket } from "@/actions/ticket";
@@ -42,8 +40,6 @@ interface StudentInfo {
   lastName: string;
   middleName: string;
   suffix: string;
-  gender: Gender | "";
-  birthdate: string;
   year: YearLevel | "";
   campus: Campus | "";
   email: string;
@@ -187,17 +183,6 @@ function getShortCampusName(campus: Campus | ""): string {
   return campus.replace("Binalbagan Catholic College - ", "");
 }
 
-function formatBirthdate(value: string): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return value;
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
 function getFullName(info: {
   firstName: string;
   middleName?: string;
@@ -338,8 +323,6 @@ export default function TransactionModal({
     lastName: "",
     middleName: "",
     suffix: "",
-    gender: "",
-    birthdate: "",
     year: "",
     campus: "",
     email: "",
@@ -440,8 +423,6 @@ export default function TransactionModal({
       lastName: "",
       middleName: "",
       suffix: "",
-      gender: "",
-      birthdate: "",
       year: "",
       campus: "",
       email: "",
@@ -519,23 +500,6 @@ export default function TransactionModal({
     if (!studentInfo.lastName.trim()) newErrors.lastName = "Required";
     else if (studentInfo.lastName.length < 2)
       newErrors.lastName = "Last name must be at least 2 characters";
-
-    if (!studentInfo.gender) newErrors.gender = "Required";
-
-    if (!studentInfo.birthdate) {
-      newErrors.birthdate = "Required";
-    } else {
-      const bd = new Date(studentInfo.birthdate);
-      if (isNaN(bd.getTime())) {
-        newErrors.birthdate = "Invalid date";
-      } else if (bd > new Date()) {
-        newErrors.birthdate = "Birthdate cannot be in the future";
-      } else {
-        const age =
-          (Date.now() - bd.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-        if (age < 3) newErrors.birthdate = "Please enter a valid birthdate";
-      }
-    }
 
     if (!studentInfo.year) newErrors.year = "Required";
     if (!studentInfo.campus) newErrors.campus = "Campus is required";
@@ -670,8 +634,6 @@ export default function TransactionModal({
               lastName: studentInfo.lastName.trim(),
               middleName: studentInfo.middleName.trim(),
               suffix: studentInfo.suffix || "",
-              gender: studentInfo.gender,
-              birthdate: studentInfo.birthdate,
               year: studentInfo.year,
               campus: studentInfo.campus,
               email: publicEmail,
@@ -716,8 +678,6 @@ export default function TransactionModal({
           lastName: sanitizeInput(studentInfo.lastName),
           middleName: sanitizeInput(studentInfo.middleName) || undefined,
           suffix: studentInfo.suffix || undefined,
-          gender: studentInfo.gender,
-          birthdate: studentInfo.birthdate,
           year: studentInfo.year,
           campus: studentInfo.campus,
         },
@@ -1032,56 +992,6 @@ export default function TransactionModal({
                                   ))}
                                 </SelectContent>
                               </Select>
-                            </Field>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <Field
-                              label="Gender"
-                              required
-                              error={errors.gender}
-                            >
-                              <Select
-                                value={studentInfo.gender}
-                                onValueChange={(v) => {
-                                  setStudentInfo((p) => ({
-                                    ...p,
-                                    gender: v as Gender,
-                                  }));
-                                  clearErr("gender");
-                                }}
-                              >
-                                <SelectTrigger className="rounded-xl border-[#E2E8F0] focus:ring-1 focus:ring-[#0000CC] h-11">
-                                  <SelectValue placeholder="Select" />
-                                </SelectTrigger>
-                                <SelectContent className="z-[9999]">
-                                  {GENDERS.map((g) => (
-                                    <SelectItem key={g} value={g}>
-                                      {g}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </Field>
-
-                            <Field
-                              label="Birthdate"
-                              required
-                              error={errors.birthdate}
-                            >
-                              <Input
-                                type="date"
-                                value={studentInfo.birthdate}
-                                onChange={(e) => {
-                                  setStudentInfo((p) => ({
-                                    ...p,
-                                    birthdate: e.target.value,
-                                  }));
-                                  clearErr("birthdate");
-                                }}
-                                max={new Date().toISOString().split("T")[0]}
-                                className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] h-11"
-                              />
                             </Field>
                           </div>
 
@@ -1526,16 +1436,6 @@ export default function TransactionModal({
                                     value={submittedInfo.student.schoolId}
                                   />
                                 )}
-                                <ReceiptRow
-                                  label="Gender"
-                                  value={submittedInfo.student.gender || "—"}
-                                />
-                                <ReceiptRow
-                                  label="Birthdate"
-                                  value={formatBirthdate(
-                                    submittedInfo.student.birthdate,
-                                  )}
-                                />
                                 <ReceiptRow
                                   label="Year Level"
                                   value={submittedInfo.student.year || "—"}
