@@ -23,9 +23,10 @@ import {
 import { LogOut, Settings } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { logoutAction } from "@/actions/auth";
+import { getStaffById } from "@/actions/staff";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 interface AdminHeaderProps {
   user: {
@@ -35,6 +36,7 @@ interface AdminHeaderProps {
     staffRole?: string;
     staffId?: string;
     facultyId?: string;
+    cashierWindow?: string;
   };
 }
 
@@ -82,10 +84,52 @@ const roleNames: Record<string, string> = {
   cashier: "Cashier",
 };
 
+// "3" -> "Window 3", "Window 3" -> "Window 3"
+function formatWindow(value?: string | null): string {
+  const w = String(value || "").trim();
+  if (!w) return "";
+  return /^\d+$/.test(w) ? `Window ${w}` : w;
+}
+
 export function AdminHeader({ user }: AdminHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { update } = useSession();
+
+  const isAdmin = user?.role === "1";
+  const staffRole = user?.staffRole || "";
+  const isCashier = !isAdmin && staffRole === "cashier";
+  const roleDisplayName = isAdmin ? "Admin" : roleNames[staffRole] || "Staff";
+
+  // Cashier window: use it from the session if present, otherwise fetch it
+  const [cashierWindow, setCashierWindow] = useState<string>(
+    user?.cashierWindow || "",
+  );
+
+  useEffect(() => {
+    if (!isCashier || !user?.staffId || user?.cashierWindow) return;
+
+    let cancelled = false;
+    (async () => {
+      const result = await getStaffById(user.staffId as string);
+      if (!cancelled && result.success && result.staff?.cashierWindow) {
+        setCashierWindow(String(result.staff.cashierWindow));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isCashier, user?.staffId, user?.cashierWindow]);
+
+  const windowLabel = isCashier ? formatWindow(cashierWindow) : "";
+
+  // e.g. "Cashier · Window 3"
+  const roleLine = isAdmin
+    ? user?.email
+    : windowLabel
+      ? `${roleDisplayName} · ${windowLabel}`
+      : roleDisplayName;
 
   const handleLogout = async () => {
     const result = await logoutAction();
@@ -95,10 +139,6 @@ export function AdminHeader({ user }: AdminHeaderProps) {
       router.refresh();
     }
   };
-
-  const isAdmin = user?.role === "1";
-  const staffRole = user?.staffRole || "";
-  const roleDisplayName = isAdmin ? "Admin" : roleNames[staffRole] || "Staff";
 
   const breadcrumbs = useMemo(() => {
     const segments = pathname.split("/").filter(Boolean);
@@ -173,7 +213,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
                     className="text-xs text-gray-500"
                     style={{ fontFamily: "var(--font-geist-sans)" }}
                   >
-                    {isAdmin ? user?.email : roleDisplayName}
+                    {roleLine}
                   </p>
                 </div>
               </Button>
@@ -182,7 +222,12 @@ export function AdminHeader({ user }: AdminHeaderProps) {
               <DropdownMenuLabel
                 style={{ fontFamily: "var(--font-geist-sans)" }}
               >
-                My Account
+                <p>My Account</p>
+                {windowLabel && (
+                  <p className="text-xs font-normal text-gray-500">
+                    Assigned to {windowLabel}
+                  </p>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem
