@@ -1,18 +1,11 @@
 // components/public/FeatureSection.tsx
 "use client";
 
-import { Plus_Jakarta_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-plus-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
-});
 
 interface Feature {
   description: string;
@@ -727,7 +720,7 @@ export default function FeaturesSection() {
     <section
       id="features-section"
       ref={sectionRef}
-      className={`${plusJakarta.variable} relative bg-[#0000CC] min-h-screen py-20 md:py-28 flex items-center overflow-hidden`}
+      className="relative bg-[#0000CC] min-h-screen py-20 md:py-28 flex items-center overflow-hidden"
     >
       {/* White Dot */}
       <div
