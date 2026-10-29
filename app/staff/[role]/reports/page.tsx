@@ -36,7 +36,9 @@ interface ReportStats {
   servingTickets: number;
   completedTickets: number;
   cancelledTickets: number;
+  /** seconds */
   averageWaitTime: number;
+  /** seconds */
   averageServiceTime: number;
   totalStudents: number;
   transactionsByType: Record<string, number>;
@@ -52,7 +54,56 @@ interface StaffPerformance {
   isOnline: boolean;
   ticketsServed: number;
   ticketsCompleted: number;
+  /** seconds */
   averageServiceTime: number;
+}
+
+// ------------------------------------------------------------
+// Duration helpers
+// ------------------------------------------------------------
+
+/** Seconds between two date-like values, or null if either is missing/invalid. */
+function secondsBetween(from: unknown, to: unknown): number | null {
+  if (!from || !to) return null;
+  const start = new Date(from as any).getTime();
+  const end = new Date(to as any).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, Math.round((end - start) / 1000));
+}
+
+/**
+ * Wait time in seconds: stored value first, otherwise servedAt - createdAt.
+ */
+function getTicketWaitSeconds(t: any): number | null {
+  if (typeof t.waitTime === "number" && t.waitTime >= 0) return t.waitTime;
+  return secondsBetween(t.createdAt, t.servedAt);
+}
+
+/**
+ * Service time in seconds: stored value first, otherwise completedAt - servedAt.
+ * Only meaningful for completed tickets.
+ */
+function getTicketServiceSeconds(t: any): number | null {
+  if (typeof t.serviceTime === "number" && t.serviceTime >= 0)
+    return t.serviceTime;
+  if (t.status !== "completed") return null;
+  return secondsBetween(t.servedAt, t.completedAt);
+}
+
+function averageOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+/** 0 -> "N/A", 45 -> "45s", 150 -> "2m 30s", 3900 -> "1h 5m" */
+function formatDuration(totalSeconds: number): string {
+  if (!totalSeconds || totalSeconds <= 0) return "N/A";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function ReportsSkeleton() {
@@ -197,31 +248,17 @@ function ReportsContent() {
           t.status === "skipped",
       ).length;
 
-      // 6. Average wait time
+      // 6. Average wait time (seconds) — stored waitTime, else servedAt - createdAt
       const waitTimes = tickets
-        .filter((t: any) => t.waitTime)
-        .map((t: any) => t.waitTime);
-      const averageWaitTime =
-        waitTimes.length > 0
-          ? Math.round(
-              waitTimes.reduce((a: number, b: number) => a + b, 0) /
-                waitTimes.length /
-                60,
-            )
-          : 0;
+        .map((t: any) => getTicketWaitSeconds(t))
+        .filter((v: number | null): v is number => v !== null);
+      const averageWaitTime = averageOf(waitTimes);
 
-      // 7. Average service time
+      // 7. Average service time (seconds) — stored serviceTime, else completedAt - servedAt
       const serviceTimes = tickets
-        .filter((t: any) => t.serviceTime)
-        .map((t: any) => t.serviceTime);
-      const averageServiceTime =
-        serviceTimes.length > 0
-          ? Math.round(
-              serviceTimes.reduce((a: number, b: number) => a + b, 0) /
-                serviceTimes.length /
-                60,
-            )
-          : 0;
+        .map((t: any) => getTicketServiceSeconds(t))
+        .filter((v: number | null): v is number => v !== null);
+      const averageServiceTime = averageOf(serviceTimes);
 
       // 8. Unique students
       const uniqueStudents = new Set(
@@ -296,19 +333,9 @@ function ReportsContent() {
                 (t: any) => t.status === "completed",
               );
               const staffServiceTimes = completedByStaff
-                .filter((t: any) => t.serviceTime)
-                .map((t: any) => t.serviceTime);
-              const avgService =
-                staffServiceTimes.length > 0
-                  ? Math.round(
-                      staffServiceTimes.reduce(
-                        (a: number, b: number) => a + b,
-                        0,
-                      ) /
-                        staffServiceTimes.length /
-                        60,
-                    )
-                  : 0;
+                .map((t: any) => getTicketServiceSeconds(t))
+                .filter((v: number | null): v is number => v !== null);
+              const avgService = averageOf(staffServiceTimes);
 
               return {
                 staffId: staff.staffId,
@@ -524,9 +551,7 @@ function ReportsContent() {
               Average Wait Time
             </p>
             <p className="text-xl font-bold text-gray-900">
-              {stats.averageWaitTime > 0
-                ? `${stats.averageWaitTime} min`
-                : "N/A"}
+              {formatDuration(stats.averageWaitTime)}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               Time from ticket creation to serving
@@ -543,9 +568,7 @@ function ReportsContent() {
               Average Service Time
             </p>
             <p className="text-xl font-bold text-gray-900">
-              {stats.averageServiceTime > 0
-                ? `${stats.averageServiceTime} min`
-                : "N/A"}
+              {formatDuration(stats.averageServiceTime)}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               Time from serving to completion
@@ -740,7 +763,7 @@ function ReportsContent() {
                   <div className="text-right">
                     <p className="text-xs font-semibold text-gray-700 tabular-nums">
                       {staff.averageServiceTime > 0
-                        ? `${staff.averageServiceTime}m`
+                        ? formatDuration(staff.averageServiceTime)
                         : "—"}
                     </p>
                     <p className="text-[10px] text-gray-400">Avg</p>
