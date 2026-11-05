@@ -49,10 +49,10 @@ interface Ticket {
 }
 
 interface SessionUser {
+  id?: string;
   staffId?: string;
   staffRole?: string;
-  name?: string;
-  [key: string]: unknown;
+  name?: string | null;
 }
 
 interface ServeTicketViewProps {
