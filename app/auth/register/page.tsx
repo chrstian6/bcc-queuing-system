@@ -22,23 +22,25 @@ import {
   type YearLevel,
 } from "@/types/ticket";
 
+// Variable fonts: no `weight` array, so Next requests the full weight range
+// in a single request instead of many static weights.
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-plus-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
 });
 
 const geist = Geist({
   subsets: ["latin"],
   variable: "--font-geist-sans",
-  weight: ["400", "500", "600", "700", "900"],
+  display: "swap",
 });
 
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-fraunces",
-  weight: ["400", "500", "600", "700", "800", "900"],
-  style: ["normal", "italic"],
+  style: ["italic"],
+  display: "swap",
 });
 
 const inputClass =
