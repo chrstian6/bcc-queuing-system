@@ -7,7 +7,11 @@ import { headers } from "next/headers";
 import User, { UserRole } from "@/models/User";
 import Staff from "@/models/Staff";
 import { revalidatePath } from "next/cache";
-import { getStaffRoleNumber } from "@/lib/roles";
+import {
+  getStaffRoleNumber,
+  getStaffDashboardPath,
+  STAFF_SESSION_ROLES,
+} from "@/lib/roles";
 import { checkRateLimit, getClientIp } from "@/lib/ratelimits";
 import {
   registerStudentSchema,
@@ -44,12 +48,10 @@ export async function loginAction(
       };
     }
 
-    // For staff login, verify credentials directly since they use Staff model
     if (role === "staff") {
       return await staffLogin(email, password);
     }
 
-    // Admin/student login share the User model
     const result = await signIn("credentials", {
       email: email.toLowerCase().trim(),
       password,
@@ -107,7 +109,6 @@ export async function loginAction(
   }
 }
 
-// In actions/auth.ts - Update the staffLogin function redirects
 async function staffLogin(
   email: string,
   password: string,
@@ -136,10 +137,17 @@ async function staffLogin(
       };
     }
 
-    // Dynamic redirect based on role
-    const redirectTo = `/staff/${staff.roleName}/dashboard`;
-
+    // Head roles map to the SAME portal as their base counterparts.
+    const redirectTo = getStaffDashboardPath(staff.roleName);
     const roleNumber = getStaffRoleNumber(staff.roleName);
+
+    if (!redirectTo || roleNumber === undefined) {
+      return {
+        success: false,
+        error:
+          "Your staff role is not configured. Please contact an administrator.",
+      };
+    }
 
     const result = await signIn("credentials", {
       email: email.toLowerCase().trim(),
@@ -155,7 +163,6 @@ async function staffLogin(
       };
     }
 
-    // If must change password, redirect to standalone change password page
     if (staff.mustChangePassword) {
       return {
         success: true,
@@ -189,6 +196,7 @@ export async function logoutAction(): Promise<AuthResponse> {
     revalidatePath("/admin/dashboard");
     revalidatePath("/staff/cashier/dashboard");
     revalidatePath("/staff/registrar/dashboard");
+    revalidatePath("/staff/dean/dashboard");
     revalidatePath("/student/dashboard");
     return { success: true, message: "Logged out successfully" };
   } catch (error: any) {
@@ -227,7 +235,6 @@ export async function registerStudentAction(
 
     const input = parsed.data;
     const email = input.email.toLowerCase().trim();
-    // Campus is derived server-side from year level, never client-supplied
     const campus = getCampusForYearLevel(input.year as YearLevel);
     if (!campus) {
       return { success: false, error: "Invalid year level" };
@@ -273,7 +280,6 @@ export async function registerStudentAction(
 
     await user.save();
 
-    // Immediate login (no email verification by design)
     const result = await signIn("credentials", {
       email,
       password: input.password,
@@ -282,7 +288,6 @@ export async function registerStudentAction(
     });
 
     if (result?.error) {
-      // Account exists but auto-login failed — let them log in manually
       return {
         success: true,
         message: "Account created. Please log in.",
@@ -332,17 +337,6 @@ export async function getSession() {
   try {
     const session = await auth();
 
-    console.log("🔍 getSession called:", {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      staffId: session?.user?.staffId,
-      staffRole: session?.user?.staffRole,
-      roleName: session?.user?.roleName,
-      role: session?.user?.role,
-      email: session?.user?.email,
-      name: session?.user?.name,
-    });
-
     if (!session) {
       return { success: false, error: "No session found", session: null };
     }
@@ -377,8 +371,7 @@ export async function checkAuth(requiredRole?: "admin" | "staff") {
       }
 
       if (requiredRole === "staff") {
-        const staffRoles = ["3", "4", "5", "6"];
-        if (!staffRoles.includes(session.user?.role || "")) {
+        if (!STAFF_SESSION_ROLES.includes(session.user?.role || "")) {
           return {
             isAuthenticated: true,
             isAuthorized: false,
@@ -388,12 +381,6 @@ export async function checkAuth(requiredRole?: "admin" | "staff") {
         }
       }
     }
-
-    console.log("✅ checkAuth passed:", {
-      role: session.user?.role,
-      roleName: session.user?.roleName,
-      staffId: session.user?.staffId,
-    });
 
     return {
       isAuthenticated: true,

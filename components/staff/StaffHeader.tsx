@@ -25,6 +25,7 @@ import { logoutAction } from "@/actions/auth";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Fragment } from "react";
+import { baseStaffRole } from "@/lib/roles";
 
 interface StaffHeaderProps {
   user: {
@@ -72,7 +73,7 @@ const breadcrumbMap: Record<string, string> = {
   settings: "Settings",
 };
 
-// Role display names
+// Role display names — keyed by BASE role (head_* collapsed to base)
 const roleNames: Record<string, string> = {
   registrar: "Registrar",
   dean: "Dean",
@@ -80,7 +81,7 @@ const roleNames: Record<string, string> = {
   cashier: "Cashier",
 };
 
-// Role prefixes for URLs
+// Role prefixes for URLs — also keyed by BASE role
 const rolePrefixes: Record<string, string> = {
   registrar: "registrar",
   dean: "dean",
@@ -93,7 +94,9 @@ export function StaffHeader({ user }: StaffHeaderProps) {
   const router = useRouter();
   const { update } = useSession();
 
-  const staffRole = user?.staffRole || "";
+  // ✅ Normalize head_dean → dean, head_registrar → registrar, etc.
+  // so both role display and breadcrumb URLs work for head staff too.
+  const staffRole = user?.staffRole ? baseStaffRole(user.staffRole) || "" : "";
   const roleDisplayName = roleNames[staffRole] || "Staff";
   const rolePrefix = rolePrefixes[staffRole] || "staff";
 
@@ -124,7 +127,7 @@ export function StaffHeader({ user }: StaffHeaderProps) {
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink
-              href={`/${rolePrefix}/dashboard`}
+              href={`/staff/${rolePrefix}/dashboard`}
               style={{ fontFamily: "var(--font-geist-sans)" }}
             >
               {roleDisplayName}

@@ -29,6 +29,7 @@ import {
   History,
 } from "lucide-react";
 import { logoutAction } from "@/actions/auth";
+import { baseStaffRole } from "@/lib/roles";
 
 interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: {
@@ -41,22 +42,27 @@ interface AdminSidebarProps extends React.ComponentProps<typeof Sidebar> {
   };
 }
 
+type Variant = "admin" | "student" | "registrar" | "dean" | "dsdw" | "cashier";
+
 export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
   const pathname = usePathname();
   const { update } = useSession();
 
-  // Chrome variant per portal: admin (role 1), student (role 2),
-  // registrar (role 3), dean (role 4), cashier (role 6, default)
-  const variant =
+  // Normalize once: head_dean → dean, head_cashier → cashier, etc.
+  const baseRole = user?.staffRole ? baseStaffRole(user.staffRole) : null;
+
+  // ✅ Head staff get an extra "Users" section — regular staff don't.
+  const isHead =
+    user?.staffRole === "head_dean" ||
+    user?.staffRole === "head_registrar" ||
+    user?.staffRole === "head_cashier";
+
+  const variant: Variant =
     user?.role === "1"
       ? "admin"
       : user?.role === "2"
         ? "student"
-        : user?.role === "3" || user?.staffRole === "registrar"
-          ? "registrar"
-          : user?.role === "4" || user?.staffRole === "dean"
-            ? "dean"
-            : "cashier";
+        : ((baseRole as Variant | null) ?? "cashier");
 
   const roleDisplayName =
     variant === "admin"
@@ -67,7 +73,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
           ? "Registrar"
           : variant === "dean"
             ? "Dean"
-            : "Cashier";
+            : variant === "dsdw"
+              ? "DSDW"
+              : "Cashier";
 
   const homeUrl =
     variant === "admin"
@@ -78,7 +86,21 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
           ? "/staff/registrar/dashboard"
           : variant === "dean"
             ? "/staff/dean/dashboard"
-            : "/staff/cashier/dashboard";
+            : variant === "dsdw"
+              ? "/staff/dsdw/dashboard"
+              : "/staff/cashier/dashboard";
+
+  // ✅ Reusable nav entry for head staff.
+  const usersNavEntry = (base: "dean" | "registrar" | "cashier") => ({
+    title: "Users",
+    url: `/staff/${base}/users`,
+    icon: Users,
+    isActive: pathname.startsWith(`/staff/${base}/users`),
+    items: [
+      { title: "All Staff", url: `/staff/${base}/users` },
+      { title: "Create Account", url: `/staff/${base}/users/create` },
+    ],
+  });
 
   const adminNavMain = [
     {
@@ -147,6 +169,8 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       icon: ChartNoAxesCombined,
       isActive: pathname.startsWith("/staff/dean/reports"),
     },
+    // ✅ Head dean only
+    ...(isHead ? [usersNavEntry("dean")] : []),
     {
       title: "Settings",
       url: "/staff/dean/settings",
@@ -155,7 +179,6 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
-  // Cashier nav
   const cashierNavMain = [
     {
       title: "Dashboard",
@@ -179,6 +202,8 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       icon: ChartColumn,
       isActive: pathname.startsWith("/staff/cashier/reports"),
     },
+    // ✅ Head cashier only
+    ...(isHead ? [usersNavEntry("cashier")] : []),
     {
       title: "Settings",
       url: "/staff/cashier/settings",
@@ -212,6 +237,45 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         { title: "All Requests", url: "/staff/registrar/requests" },
       ],
     },
+    // ✅ Head registrar only
+    ...(isHead ? [usersNavEntry("registrar")] : []),
+    {
+      title: "Settings",
+      url: "/staff/registrar/settings",
+      icon: Settings,
+      isActive: pathname.startsWith("/staff/registrar/settings"),
+    },
+  ];
+
+  const dsdwNavMain = [
+    {
+      title: "Dashboard",
+      url: "/staff/dsdw/dashboard",
+      icon: LayoutDashboard,
+      isActive: pathname === "/staff/dsdw/dashboard",
+    },
+    {
+      title: "Queue",
+      url: "/staff/dsdw/queue",
+      icon: ListOrdered,
+      isActive: pathname.startsWith("/staff/dsdw/queue"),
+      items: [
+        { title: "Serve Tickets", url: "/staff/dsdw/queue" },
+        { title: "Queue History", url: "/staff/dsdw/queue?view=all" },
+      ],
+    },
+    {
+      title: "Reports",
+      url: "/staff/dsdw/reports",
+      icon: ChartNoAxesCombined,
+      isActive: pathname.startsWith("/staff/dsdw/reports"),
+    },
+    {
+      title: "Settings",
+      url: "/staff/dsdw/settings",
+      icon: Settings,
+      isActive: pathname.startsWith("/staff/dsdw/settings"),
+    },
   ];
 
   const studentNavMain = [
@@ -235,8 +299,10 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
     },
   ];
 
-  // Cashier projects
-  const projectsByVariant = {
+  const projectsByVariant: Record<
+    Variant,
+    { name: string; url: string; icon: any }[]
+  > = {
     admin: [
       { name: "Create Account", url: "/admin/users/create", icon: UserPlus },
       { name: "View Queue", url: "/admin/queue", icon: Play },
@@ -275,6 +341,19 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
         icon: Play,
       },
     ],
+    dsdw: [
+      { name: "Serve Next", url: "/staff/dsdw/queue", icon: Play },
+      {
+        name: "Today's Report",
+        url: "/staff/dsdw/reports",
+        icon: ChartNoAxesCombined,
+      },
+      {
+        name: "All Tickets",
+        url: "/staff/dsdw/queue?view=all",
+        icon: ListOrdered,
+      },
+    ],
     student: [
       {
         name: "New Document Request",
@@ -283,7 +362,7 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
       },
       { name: "Live Queue", url: "/live-queue", icon: Play },
     ],
-  } as const;
+  };
 
   const projects = [...projectsByVariant[variant]];
 
@@ -296,7 +375,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
           ? registrarNavMain
           : variant === "dean"
             ? deanNavMain
-            : cashierNavMain;
+            : variant === "dsdw"
+              ? dsdwNavMain
+              : cashierNavMain;
 
   return (
     <Sidebar

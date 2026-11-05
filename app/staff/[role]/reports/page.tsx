@@ -27,6 +27,7 @@ import {
   getDepartmentFromRole,
   getValidTransactionTypesForRole,
 } from "@/lib/ticketUtils";
+import { baseStaffRole } from "@/lib/roles";
 
 const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 
@@ -62,7 +63,6 @@ interface StaffPerformance {
 // Duration helpers
 // ------------------------------------------------------------
 
-/** Seconds between two date-like values, or null if either is missing/invalid. */
 function secondsBetween(from: unknown, to: unknown): number | null {
   if (!from || !to) return null;
   const start = new Date(from as any).getTime();
@@ -71,18 +71,11 @@ function secondsBetween(from: unknown, to: unknown): number | null {
   return Math.max(0, Math.round((end - start) / 1000));
 }
 
-/**
- * Wait time in seconds: stored value first, otherwise servedAt - createdAt.
- */
 function getTicketWaitSeconds(t: any): number | null {
   if (typeof t.waitTime === "number" && t.waitTime >= 0) return t.waitTime;
   return secondsBetween(t.createdAt, t.servedAt);
 }
 
-/**
- * Service time in seconds: stored value first, otherwise completedAt - servedAt.
- * Only meaningful for completed tickets.
- */
 function getTicketServiceSeconds(t: any): number | null {
   if (typeof t.serviceTime === "number" && t.serviceTime >= 0)
     return t.serviceTime;
@@ -95,7 +88,6 @@ function averageOf(values: number[]): number {
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
-/** 0 -> "N/A", 45 -> "45s", 150 -> "2m 30s", 3900 -> "1h 5m" */
 function formatDuration(totalSeconds: number): string {
   if (!totalSeconds || totalSeconds <= 0) return "N/A";
   const hours = Math.floor(totalSeconds / 3600);
@@ -175,8 +167,13 @@ function ReportsContent() {
       }
 
       const userStaffId = sessionResult.session.user?.staffId;
-      const userStaffRole = sessionResult.session.user?.staffRole || role;
+      const rawStaffRole = sessionResult.session.user?.staffRole || role;
       const userRole = sessionResult.session.user?.role;
+
+      // ✅ Collapse head_dean → dean, head_registrar → registrar, etc.
+      // Use the BASE role for ALL downstream logic (filtering, transaction
+      // types, department counters) so head and regular staff see the same data.
+      const userStaffRole = baseStaffRole(rawStaffRole) ?? role;
 
       if (!userStaffId) {
         setLoadError("Staff ID not found");
@@ -184,7 +181,8 @@ function ReportsContent() {
         return;
       }
 
-      // Verify user's role matches the current route
+      // Verify user's department matches the current route.
+      // Admin ("1") bypasses; head_dean passes because userStaffRole === "dean".
       if (userStaffRole !== role && userRole !== "1") {
         setLoadError("You do not have access to this page");
         setIsLoading(false);
@@ -248,13 +246,13 @@ function ReportsContent() {
           t.status === "skipped",
       ).length;
 
-      // 6. Average wait time (seconds) — stored waitTime, else servedAt - createdAt
+      // 6. Average wait time (seconds)
       const waitTimes = tickets
         .map((t: any) => getTicketWaitSeconds(t))
         .filter((v: number | null): v is number => v !== null);
       const averageWaitTime = averageOf(waitTimes);
 
-      // 7. Average service time (seconds) — stored serviceTime, else completedAt - servedAt
+      // 7. Average service time (seconds)
       const serviceTimes = tickets
         .map((t: any) => getTicketServiceSeconds(t))
         .filter((v: number | null): v is number => v !== null);
@@ -318,7 +316,7 @@ function ReportsContent() {
         peakHours,
       });
 
-      // 13. Fetch staff counters (using the resolved department)
+      // 13. Fetch staff counters (using the resolved BASE department)
       try {
         const department = getDepartmentFromRole(userStaffRole);
         const countersResult = await getDepartmentStaffCounters(department);

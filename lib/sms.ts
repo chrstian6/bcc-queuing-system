@@ -1,104 +1,150 @@
 // lib/sms.ts
+// TextBee SMS provider
+// Docs: https://textbee.dev
 
-interface IProgSMSResponse {
+interface SMSResponse {
   success: boolean;
   messageId?: string;
   error?: string;
   messageStatusLink?: string;
 }
 
-interface IProgSMSStatusResponse {
+interface SMSStatusResponse {
   success: boolean;
   status?: string;
   error?: string;
 }
 
-const IPROG_SMS_ENDPOINT = "https://sms.iprogtech.com/api/v1/sms_messages";
-const IPROG_SMS_STATUS_ENDPOINT =
-  "https://sms.iprogtech.com/api/v1/sms_messages/status";
+const TEXTBEE_SEND_ENDPOINT = "https://api.textbee.dev/api/v1/gateway/send-sms";
+
+// Account-level message history endpoint. Use the `smsBatchId` query
+// parameter to filter messages belonging to one send batch.
+const TEXTBEE_MESSAGES_ENDPOINT =
+  "https://api.textbee.dev/api/v1/gateway/messages";
 
 /**
- * Format phone number for IPROG SMS.
- * IPROG expects a local-format number like 09XXXXXXXXX (their docs use this
- * consistently), so normalize to that rather than the 63-prefixed format.
+ * Format a phone number to E.164 (+63XXXXXXXXXX).
+ *
+ * TextBee recommends E.164 for all recipients [citation:1][citation:5].
+ * Accepts the formats we already store in MongoDB:
+ *   09XXXXXXXXX   → +639XXXXXXXXX
+ *   9XXXXXXXXX    → +639XXXXXXXXX
+ *   63XXXXXXXXXX  → +63XXXXXXXXXX
+ *   +63XXXXXXXXXX → +63XXXXXXXXXX
  */
 function formatPhoneForSMS(phone: string): string {
-  const cleanPhone = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
 
-  if (cleanPhone.startsWith("63") && cleanPhone.length === 12) {
-    return "0" + cleanPhone.substring(2);
-  } else if (cleanPhone.startsWith("9") && cleanPhone.length === 10) {
-    return "0" + cleanPhone;
+  if (digits.startsWith("63") && digits.length === 12) {
+    return `+${digits}`;
   }
-
-  // Already in 09XXXXXXXXX form (or unrecognized — pass through as-is)
-  return cleanPhone;
+  if (digits.startsWith("9") && digits.length === 10) {
+    return `+63${digits}`;
+  }
+  if (digits.startsWith("0") && digits.length === 11) {
+    return `+63${digits.slice(1)}`;
+  }
+  // Unrecognized — best-effort pass-through with + prefix
+  return `+${digits}`;
 }
 
 /**
- * Send SMS using the IPROG SMS API
- * Docs: https://sms.iprogtech.com/api/v1/documentation
+ * Send SMS using the TextBee API.
+ *
+ * TextBee routes messages through an Android device linked to your
+ * account. A 200 response means the message was **accepted and queued**,
+ * not delivered. The phone must be online and have SMS permission granted
+ * for the message to actually go out [citation:5][citation:10].
+ *
+ * Required env vars:
+ *   TEXTBEE_API_KEY    — from the TextBee dashboard
+ *   TEXTBEE_DEVICE_ID  — optional; pins a specific linked phone
  */
 export async function sendSMS(
   phoneNumber: string,
   message: string,
-): Promise<IProgSMSResponse> {
+): Promise<SMSResponse> {
   try {
     const formattedPhone = formatPhoneForSMS(phoneNumber);
 
-    console.log("=== SMS Sending Debug ===");
+    console.log("=== SMS Sending Debug (TextBee) ===");
     console.log("Original phone number:", phoneNumber);
     console.log("Formatted phone number:", formattedPhone);
     console.log("Message:", message);
-    console.log("=========================");
+    console.log("===================================");
 
-    const IPROG_API_TOKEN = process.env.IPROG_API_TOKEN;
+    const TEXTBEE_API_KEY = process.env.TEXTBEE_API_KEY;
+    const TEXTBEE_DEVICE_ID = process.env.TEXTBEE_DEVICE_ID;
 
-    if (!IPROG_API_TOKEN) {
-      console.error("IPROG_API_TOKEN not configured");
+    if (!TEXTBEE_API_KEY) {
+      console.error("TEXTBEE_API_KEY not configured");
       return { success: false, error: "SMS service not configured" };
     }
 
-    const requestBody = {
-      api_token: IPROG_API_TOKEN,
-      phone_number: formattedPhone,
+    const requestBody: Record<string, unknown> = {
+      recipients: [formattedPhone],
       message,
     };
 
-    console.log(`Sending SMS to ${formattedPhone} via ${IPROG_SMS_ENDPOINT}`);
+    // Optional: pin a specific device if you have multiple linked phones
+    if (TEXTBEE_DEVICE_ID) {
+      requestBody.deviceId = TEXTBEE_DEVICE_ID;
+    }
 
-    const response = await fetch(IPROG_SMS_ENDPOINT, {
+    console.log(
+      `Sending SMS to ${formattedPhone} via ${TEXTBEE_SEND_ENDPOINT}`,
+    );
+
+    const response = await fetch(TEXTBEE_SEND_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "x-api-key": TEXTBEE_API_KEY,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(requestBody),
       cache: "no-store",
     });
 
     const data = await response.json().catch(() => null);
 
-    console.log("SMS API Response:", JSON.stringify(data, null, 2));
+    console.log("TextBee SMS API Response:", JSON.stringify(data, null, 2));
 
     if (!response.ok || !data) {
-      console.error("IPROG SMS API error:", response.status, data);
+      console.error("TextBee SMS API error:", response.status, data);
       return {
         success: false,
-        error: `Failed to send SMS (${response.status})`,
+        error:
+          (data && (data.error || data.message)) ||
+          `Failed to send SMS (${response.status})`,
       };
     }
 
-    // IPROG returns { status: 200, message: "...", message_id: "iSms-..." }
-    // on success, or { status: "error"/500, message: "..." } on failure.
-    const isSuccess = data.status === 200 || data.status === "success";
+    // TextBee wraps the payload in `data`. Success looks like:
+    //   { data: { success: true, smsBatchId: "abc123", ... } }
+    const inner = data.data ?? data;
+    if (inner?.success === true || response.status === 200) {
+      const batchId = inner?.smsBatchId || inner?.id;
 
-    if (!isSuccess) {
-      console.error("IPROG SMS API returned error:", data.message);
-      return { success: false, error: data.message || "SMS send failed" };
+      // Build a working status link using the messages endpoint.
+      // There is no /sms-batches/{id} route — that was the cause of the 404.
+      const statusLink = batchId
+        ? `${TEXTBEE_MESSAGES_ENDPOINT}?smsBatchId=${encodeURIComponent(batchId)}`
+        : undefined;
+
+      return {
+        success: true,
+        messageId: batchId,
+        messageStatusLink: statusLink,
+      };
     }
 
+    console.error(
+      "TextBee SMS returned error:",
+      inner?.error || inner?.message,
+    );
     return {
-      success: true,
-      messageId: data.message_id,
-      messageStatusLink: data.message_status_link,
+      success: false,
+      error: inner?.error || inner?.message || "SMS send failed",
     };
   } catch (error: any) {
     console.error("Error sending SMS:", error);
@@ -118,25 +164,35 @@ export async function sendSMS(
 }
 
 /**
- * Check SMS delivery status
+ * Check SMS delivery status by TextBee batch ID.
+ *
+ * Uses the account-level message history endpoint:
+ *   GET /api/v1/gateway/messages?smsBatchId={id}
+ *
+ * Returns the status of the first message in the batch (single-recipient
+ * sends produce one message per batch). Statuses follow TextBee's state
+ * machine: pending → dispatched → sent → delivered, or failed / unknown [citation:2].
  */
 export async function checkSMSStatus(
   messageId: string,
-): Promise<IProgSMSStatusResponse> {
+): Promise<SMSStatusResponse> {
   try {
-    const IPROG_API_TOKEN = process.env.IPROG_API_TOKEN;
+    const TEXTBEE_API_KEY = process.env.TEXTBEE_API_KEY;
 
-    if (!IPROG_API_TOKEN) {
-      console.error("IPROG_API_TOKEN not configured");
+    if (!TEXTBEE_API_KEY) {
+      console.error("TEXTBEE_API_KEY not configured");
       return { success: false, error: "SMS service not configured" };
     }
 
-    const statusUrl = `${IPROG_SMS_STATUS_ENDPOINT}?api_token=${IPROG_API_TOKEN}&message_id=${messageId}`;
+    const statusUrl = `${TEXTBEE_MESSAGES_ENDPOINT}?smsBatchId=${encodeURIComponent(messageId)}`;
 
-    console.log(`Checking SMS status for ${messageId}`);
+    console.log(`Checking SMS status for batch ${messageId}`);
 
     const response = await fetch(statusUrl, {
       method: "GET",
+      headers: {
+        "x-api-key": TEXTBEE_API_KEY,
+      },
       cache: "no-store",
     });
 
@@ -148,9 +204,16 @@ export async function checkSMSStatus(
       return { success: false, error: "Failed to check SMS status" };
     }
 
+    // /gateway/messages returns { data: [...messages], meta: {...} }
+    const messages = Array.isArray(data.data) ? data.data : [];
+    if (messages.length === 0) {
+      return { success: false, error: "No messages found for this batch" };
+    }
+
+    const first = messages[0];
     return {
       success: true,
-      status: data.status || data.message_status || data.delivery_status,
+      status: first?.status || first?.state || "unknown",
     };
   } catch (error) {
     console.error("Error checking SMS status:", error);
@@ -248,8 +311,6 @@ export async function sendDocumentRequestSMS(
         message = `BCC Document Request: Hi ${studentName}, your request ${requestId} status has been updated to ${status}.`;
     }
 
-    // Limit message length. Raised to 2 SMS segments (306 chars) so the
-    // estimate at the end isn't cut off by the old 160-character cap.
     const MAX_SMS_LENGTH = 306;
     if (message.length > MAX_SMS_LENGTH) {
       message = message.substring(0, MAX_SMS_LENGTH - 3) + "...";
@@ -263,9 +324,11 @@ export async function sendDocumentRequestSMS(
       console.error("Failed to send SMS notification:", result.error);
     } else {
       console.log(
-        `SMS sent successfully to ${phoneNumber}, messageId: ${result.messageId}`,
+        `SMS sent successfully to ${phoneNumber}, batchId: ${result.messageId}`,
       );
-      console.log(`SMS status link: ${result.messageStatusLink}`);
+      if (result.messageStatusLink) {
+        console.log(`SMS status link: ${result.messageStatusLink}`);
+      }
     }
   } catch (error) {
     console.error("Error in sendDocumentRequestSMS:", error);
@@ -335,7 +398,6 @@ export async function sendTicketNotificationSMS(
         message = `BCC Queue: Hi ${studentName}, your ticket ${ticketNumber} status has been updated to ${status}.`;
     }
 
-    // Limit message length (SMS max is typically 160 characters)
     if (message.length > 160) {
       message = message.substring(0, 157) + "...";
     }
@@ -348,9 +410,11 @@ export async function sendTicketNotificationSMS(
       console.error("Failed to send ticket SMS notification:", result.error);
     } else {
       console.log(
-        `Ticket SMS sent successfully to ${phoneNumber}, messageId: ${result.messageId}`,
+        `Ticket SMS sent successfully to ${phoneNumber}, batchId: ${result.messageId}`,
       );
-      console.log(`SMS status link: ${result.messageStatusLink}`);
+      if (result.messageStatusLink) {
+        console.log(`SMS status link: ${result.messageStatusLink}`);
+      }
     }
   } catch (error) {
     console.error("Error in sendTicketNotificationSMS:", error);

@@ -78,6 +78,9 @@ const ALL_TRANSACTIONS: Record<
   "document-payment": { label: "Document Payment", department: "cashier" },
   "other-school-fees": { label: "Other School Fees", department: "cashier" },
   assessment: { label: "Assessment", department: "cashier" },
+  clearance: { label: "Clearance", department: "cashier" },
+  exam: { label: "Examination Fee", department: "cashier" },
+  "other-payment": { label: "Other Payment", department: "cashier" },
   // Registrar — mapped to DocumentRequest.documentType
   "certificate-enrollment": {
     label: "Certificate of Enrollment",
@@ -566,9 +569,19 @@ export default function TransactionModal({
         newErrors.amount = "Amount cannot exceed 12 digits";
     }
 
-    if (isRegistrarFlow && selectedTransaction === "other-document") {
-      if (!specifyTransaction.trim())
-        newErrors.specifyTransaction = "Please describe the document";
+    if (
+      (isRegistrarFlow && selectedTransaction === "other-document") ||
+      selectedTransaction === "other-school-fees" ||
+      selectedTransaction === "other-payment"
+    ) {
+      if (!specifyTransaction.trim()) {
+        newErrors.specifyTransaction =
+          selectedTransaction === "other-payment"
+            ? "Please describe what this payment is for"
+            : selectedTransaction === "other-school-fees"
+              ? "Please specify the fee"
+              : "Please describe the document";
+      }
     }
 
     if (specifyTransaction.trim() && specifyTransaction.length > 200)
@@ -1068,15 +1081,22 @@ export default function TransactionModal({
                           )}
 
                           {(selectedTransaction === "other-school-fees" ||
+                            selectedTransaction === "other-payment" ||
                             (isRegistrarFlow &&
                               selectedTransaction === "other-document")) && (
                             <Field
                               label={
                                 isRegistrarFlow
                                   ? "Which document?"
-                                  : "Specify transaction (optional)"
+                                  : selectedTransaction === "other-payment"
+                                    ? "What is this payment for?"
+                                    : "Specify transaction"
                               }
-                              required={isRegistrarFlow}
+                              required={
+                                isRegistrarFlow ||
+                                selectedTransaction === "other-payment" ||
+                                selectedTransaction === "other-school-fees"
+                              }
                               error={errors.specifyTransaction}
                             >
                               <Textarea
@@ -1091,7 +1111,9 @@ export default function TransactionModal({
                                 placeholder={
                                   isRegistrarFlow
                                     ? "e.g., Good Moral Certificate"
-                                    : "e.g., Graduation fee, Field trip payment..."
+                                    : selectedTransaction === "other-payment"
+                                      ? "e.g., ID replacement fee, laboratory fee..."
+                                      : "e.g., Graduation fee, Field trip payment..."
                                 }
                                 rows={2}
                                 maxLength={200}

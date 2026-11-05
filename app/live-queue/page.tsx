@@ -526,89 +526,7 @@ function getWaitColor(waiting: number) {
   };
 }
 
-// ─── Card (Dean's Office — single lane) ────────────────────────────────────
-
-interface QueueCardProps {
-  label: string;
-  serving: string | null;
-  waiting: number;
-}
-
-function QueueCard({ label, serving, waiting }: QueueCardProps) {
-  const colors = getWaitColor(waiting);
-  const estimatedTime = getEstimatedServeTime(waiting);
-
-  return (
-    <div className="border border-gray-100 rounded-xl p-5 flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <span
-          className={`w-2 h-2 rounded-full ${
-            serving ? "bg-green-500 animate-pulse" : "bg-gray-300"
-          }`}
-        />
-        <span
-          className="text-xs font-semibold text-gray-400 uppercase tracking-wider"
-          style={FONT}
-        >
-          {label}
-        </span>
-      </div>
-
-      <div className="flex items-baseline gap-4 flex-wrap">
-        {serving ? (
-          <span
-            className="text-5xl font-extrabold text-[#1B5A8C] tabular-nums tracking-tight"
-            style={FONT}
-          >
-            #{serving}
-          </span>
-        ) : (
-          <span
-            className="text-5xl font-extrabold text-gray-200 tracking-tight"
-            style={FONT}
-          >
-            —
-          </span>
-        )}
-        <span className="text-sm text-gray-400 font-medium" style={FONT}>
-          {waiting} waiting
-        </span>
-      </div>
-
-      <div
-        className={`rounded-lg border ${colors.border} ${colors.bg} px-3 py-2`}
-      >
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <Timer className={`w-3.5 h-3.5 ${colors.text}`} />
-          <span
-            className={`text-[10px] font-bold uppercase tracking-widest ${colors.subtext}`}
-            style={FONT}
-          >
-            Est. Wait
-          </span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 flex-wrap">
-          <p
-            className={`text-xl font-extrabold tracking-tight ${colors.text}`}
-            style={FONT}
-          >
-            {formatWait(waiting)}
-          </p>
-          {estimatedTime && (
-            <p
-              className={`text-[11px] ${colors.subtext} font-medium`}
-              style={FONT}
-            >
-              Ready by ~{estimatedTime}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Window column (Cashier — one column per window, tickets stacked) ─────
+// ─── Window column (used for both Dean and Cashier) ───────────────────────
 
 interface WindowColumnProps {
   displayName: string;
@@ -646,7 +564,7 @@ function WindowColumn({
           </span>
         </div>
 
-        {/* Staff name for this window */}
+        {/* Staff name */}
         <div className="flex items-center gap-1.5 mb-3 pl-4">
           <User className="w-3 h-3 text-gray-400 flex-shrink-0" />
           <span
@@ -703,7 +621,7 @@ function WindowColumn({
         </div>
       </div>
 
-      {/* Vertical stack of queued ticket numbers for this window */}
+      {/* Waiting list */}
       <div className="p-3 flex-1">
         <p
           className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1"
@@ -1072,13 +990,23 @@ function LiveQueueContent() {
           <SleekChart dataPoints={history} />
         </div>
 
-        {/* Dean's Office — single lane */}
-        <div className="px-6 pt-5 border-b border-gray-100">
-          <QueueCard
-            label="Dean's Office"
-            serving={deanDept?.serving ?? null}
-            waiting={deanDept?.waiting ?? 0}
-          />
+        {/* Dean's Office — single lane, same rich layout as a cashier window */}
+        <div className="px-6 pt-5 pb-5 border-b border-gray-100">
+          <h2
+            className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3"
+            style={FONT}
+          >
+            Dean&apos;s Office
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            <WindowColumn
+              displayName={deanDept?.displayName || "Dean's Office"}
+              staffName={deanDept?.staffName ?? null}
+              serving={deanDept?.serving ?? null}
+              waiting={deanDept?.waiting ?? 0}
+              waitingList={deanDept?.waitingList ?? []}
+            />
+          </div>
         </div>
 
         {/* Cashier — one column per window, tickets stacked vertically */}
