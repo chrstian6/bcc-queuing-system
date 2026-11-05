@@ -3,23 +3,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus_Jakarta_Sans, Fraunces } from "next/font/google";
 import { useState, useEffect, useRef } from "react";
 import { Menu, X } from "lucide-react";
 import gsap from "gsap";
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-plus-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
-  weight: ["400", "500", "600", "700", "800", "900"],
-  style: ["normal", "italic"],
-});
+import { plusJakarta, fraunces } from "@/lib/fonts";
 
 interface HeaderProps {
   onLoginClick?: () => void;

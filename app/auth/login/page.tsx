@@ -3,32 +3,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus_Jakarta_Sans, Geist, Fraunces } from "next/font/google";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
 import { loginAction } from "@/actions/auth";
 import { AuthRightColumn } from "@/components/auth/AuthRightColumn";
 import ForgotPasswordModal from "@/components/ForgotPasswordModal";
-
-// ─── Fonts ───────────────────────────────────────────────────────────────────
-
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-plus-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
-});
-
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-  weight: ["400", "500", "600", "700", "900"],
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
-  weight: ["400", "500", "600", "700", "800", "900"],
-  style: ["normal", "italic"],
-});
+import { plusJakarta, geist, fraunces } from "@/lib/fonts";
 
 // ─── Portals ─────────────────────────────────────────────────────────────────
 
