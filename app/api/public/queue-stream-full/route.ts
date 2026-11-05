@@ -19,8 +19,12 @@ async function getQueueStatus() {
     const settings = await SystemSetting.findById(SYSTEM_SETTINGS_ID).lean();
     const queueOpen = (settings as any)?.queueOpen !== false;
 
+    // ✅ `as const` keeps the literal types, so Mongoose's strict
+    // filter accepts `$in` without a TypeScript error.
+    const cashierRoleNames = ["cashier", "head_cashier"] as const;
+
     const cashiers = await Staff.find({
-      roleName: "cashier",
+      roleName: { $in: cashierRoleNames },
       status: "active",
     }).lean();
 
@@ -51,11 +55,19 @@ async function getQueueStatus() {
 
 const displayNames: Record<string, string> = {
   registrar: "Registrar",
+  dean: "Dean",
   cashier: "Cashier",
 };
 
 function getEmptyDepartments() {
   return [
+    {
+      department: "dean",
+      displayName: "Dean",
+      serving: null,
+      waiting: 0,
+      waitingList: [],
+    },
     {
       department: "registrar",
       displayName: "Registrar",
@@ -79,12 +91,11 @@ async function getQueueData() {
 
     const { start: today, end: tomorrow } = getAppDayRange();
 
-    const departments = ["registrar", "cashier"];
+    const departments = ["dean", "registrar", "cashier"];
 
     const departmentData = await Promise.all(
       departments.map(async (dept) => {
         try {
-          // Get serving ticket
           const servingTicket = await Ticket.findOne({
             department: dept as any,
             status: "serving" as any,
@@ -94,14 +105,12 @@ async function getQueueData() {
             .select("ticketNumber")
             .lean();
 
-          // Get waiting count
           const waitingCount = await Ticket.countDocuments({
             department: dept as any,
             status: "pending" as any,
             createdAt: { $gte: today, $lt: tomorrow },
           });
 
-          // Get waiting list with details (now includes student)
           const waitingList = await Ticket.find({
             department: dept as any,
             status: "pending" as any,
@@ -167,10 +176,8 @@ export async function GET(request: NextRequest) {
         }
       };
 
-      // Send immediately
       await sendData();
 
-      // Then every 3 seconds
       const interval = setInterval(sendData, 3000);
 
       request.signal.addEventListener("abort", () => {

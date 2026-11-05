@@ -5,6 +5,7 @@ import connectDB from "@/lib/mongodb";
 import Staff from "@/models/Staff";
 import Ticket from "@/models/Ticket";
 import { getAppDayRange } from "@/lib/time";
+import { baseStaffRole } from "@/lib/roles";
 
 /**
  * Masks one name part: "Cydric" -> "Cy****", "A" -> "A".
@@ -37,6 +38,10 @@ function maskStudentName(student?: any): string {
  * actually assigned to. Returns only: window number, cashier display name,
  * the serving ticket number, and the waiting tickets (number, transaction
  * type, MASKED student name). No emails, staff IDs, or raw student names.
+ *
+ * ✅ Both "cashier" and "head_cashier" (and any future cashier-level role)
+ * are included — a head cashier with cashierWindow = "1" appears in Window 1
+ * exactly like a regular cashier with cashierWindow = "1".
  */
 export async function getPublicCashierQueues(): Promise<{
   success: boolean;
@@ -57,12 +62,20 @@ export async function getPublicCashierQueues(): Promise<{
     await connectDB();
     const { start: today, end: tomorrow } = getAppDayRange();
 
-    const cashiers = (await Staff.find({
-      roleName: "cashier",
-      status: "active",
-    } as any)
-      .select("staffId firstName lastName cashierWindow")
+    // ✅ Fetch every active staff member, then filter by BASE role in JS.
+    // This avoids Mongoose's strict $in typing and automatically picks up
+    // any future role whose baseStaffRole is "cashier".
+    const activeStaff = (await Staff.find({ status: "active" })
+      .select("staffId firstName lastName roleName cashierWindow")
       .lean()) as any[];
+
+    const cashiers = activeStaff.filter(
+      (s) => baseStaffRole(s.roleName) === "cashier",
+    );
+
+    if (cashiers.length === 0) {
+      return { success: true, queues: [] };
+    }
 
     const staffIds = cashiers.map((s) => s.staffId);
 

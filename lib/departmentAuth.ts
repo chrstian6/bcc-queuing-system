@@ -1,10 +1,13 @@
 // lib/departmentAuth.ts
+import { baseStaffRole } from "@/lib/roles";
 
 /**
- * Check if a staff member can access the cashier department
+ * Check if a staff member can access the cashier department.
+ * "cashier" and "head_cashier" (and any future head-level cashier role)
+ * are treated identically.
  */
 export function canAccessCashier(staffRole: string): boolean {
-  return staffRole === "cashier";
+  return baseStaffRole(staffRole) === "cashier";
 }
 
 /**

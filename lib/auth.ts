@@ -47,41 +47,29 @@ export const {
         try {
           await connectDB();
 
-          // Check if it's a staff role (3, 4, 5, or 6)
           if (isStaffRole(roleNumber)) {
-            // Staff authentication
             const staff = await Staff.findOne({
               email: (credentials.email as string).toLowerCase().trim(),
               status: "active",
             }).select("+password");
 
-            console.log(
-              "🔍 [STAFF] Lookup result:",
-              staff
-                ? {
-                    email: staff.email,
-                    roleName: staff.roleName,
-                    hasPasswordField: !!staff.password,
-                  }
-                : "NOT FOUND",
-            );
-
             if (!staff) {
               throw new Error("Invalid email or password");
             }
 
-            // Get the expected role number for this staff member
             const expectedRoleNumber = getStaffRoleNumber(staff.roleName);
 
+            if (expectedRoleNumber === undefined) {
+              throw new Error("Invalid credentials for this role");
+            }
+
             if (expectedRoleNumber !== roleNumber) {
-              throw new Error(`Invalid credentials for this role`);
+              throw new Error("Invalid credentials for this role");
             }
 
             const isPasswordValid = await staff.comparePassword(
               credentials.password as string,
             );
-
-            console.log("🔑 [STAFF] Password valid:", isPasswordValid);
 
             if (!isPasswordValid) {
               throw new Error("Invalid email or password");
@@ -94,7 +82,7 @@ export const {
               name: `${staff.firstName} ${staff.lastName}`,
               staffId: staff.staffId,
               facultyId: staff.facultyId,
-              staffRole: staff.roleName,
+              staffRole: staff.roleName, // raw roleName, normalized downstream
               cashierWindow: staff.cashierWindow,
               mustChangePassword: staff.mustChangePassword,
             };
@@ -102,42 +90,21 @@ export const {
             roleNumber === UserRole.ADMIN ||
             roleNumber === UserRole.STUDENT
           ) {
-            // Admin/Student authentication
             const user = await User.findOne({
               email: (credentials.email as string).toLowerCase().trim(),
             }).select("+password");
-
-            console.log(
-              "🔍 [USER] Lookup result:",
-              user
-                ? {
-                    email: user.email,
-                    role: user.role,
-                    expectedRole: roleNumber,
-                    hasPasswordField: !!user.password,
-                    passwordHashPrefix: user.password
-                      ? user.password.substring(0, 7)
-                      : null,
-                  }
-                : "NOT FOUND",
-            );
 
             if (!user) {
               throw new Error("Invalid email or password");
             }
 
             if (user.role !== roleNumber) {
-              console.log(
-                `⚠️ Role mismatch: DB has ${user.role}, form sent ${roleNumber}`,
-              );
-              throw new Error(`Invalid credentials for this role`);
+              throw new Error("Invalid credentials for this role");
             }
 
             const isPasswordValid = await user.comparePassword(
               credentials.password as string,
             );
-
-            console.log("🔑 [USER] Password valid:", isPasswordValid);
 
             if (!isPasswordValid) {
               throw new Error("Invalid email or password");
@@ -148,7 +115,6 @@ export const {
               email: user.email,
               role: user.role.toString(),
               name: user.name || user.email.split("@")[0],
-              // Student profile claims (undefined for admins)
               ...(user.role === UserRole.STUDENT && user.schoolId
                 ? {
                     schoolId: user.schoolId,

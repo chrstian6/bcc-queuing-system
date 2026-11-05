@@ -1,5 +1,5 @@
 // types/next-auth.d.ts
-import "next-auth";
+import { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
   interface User {
@@ -7,7 +7,6 @@ declare module "next-auth" {
     staffId?: string;
     facultyId?: string;
     staffRole?: string;
-    roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
     schoolId?: string;
@@ -17,31 +16,27 @@ declare module "next-auth" {
 
   interface Session {
     user: {
-      id?: string;
-      email?: string | null;
-      name?: string | null;
-      image?: string | null;
-      role?: string;
+      id: string;
+      role: string;
       staffId?: string;
       facultyId?: string;
       staffRole?: string;
-      roleName?: string; // ADD THIS
       cashierWindow?: string;
       mustChangePassword?: boolean;
       schoolId?: string;
       year?: string;
       campus?: string;
-    };
+    } & DefaultSession["user"];
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
+    id?: string;
     role?: string;
     staffId?: string;
     facultyId?: string;
     staffRole?: string;
-    roleName?: string; // ADD THIS
     cashierWindow?: string;
     mustChangePassword?: boolean;
     schoolId?: string;

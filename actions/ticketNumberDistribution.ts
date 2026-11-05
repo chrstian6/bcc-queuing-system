@@ -5,7 +5,7 @@ import connectDB from "@/lib/mongodb";
 import Counter from "@/models/Counter";
 import Staff from "@/models/Staff";
 import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
-import { ROLES } from "@/lib/roles";
+import { ROLES, baseStaffRole } from "@/lib/roles";
 import { getSystemSettings } from "./system-settings";
 import { evaluateCounterState } from "@/lib/counterSettings";
 import { getAppDayRange, getAppNowMinutes } from "@/lib/time";
@@ -28,11 +28,57 @@ interface TicketNumberResult {
 }
 
 /**
+ * Atomically increment the GLOBAL per-department daily counter.
+ *
+ * One shared counter per department (dean / cashier / registrar / dsdw)
+ * per day. This is what produces a continuous 1, 2, 3, ... sequence
+ * across every window, regardless of which staff member gets assigned
+ * or which transaction type is requested.
+ *
+ * The Counter model stores:
+ *   _id:        "DEPT-{department}-{dateStr}"
+ *   seq:        current number
+ *   department: base role
+ *   date:       start of day
+ *
+ * NOTE: This does NOT touch per-staff counters. Those are still incremented
+ * in `distributeTicketNumber` so admin dashboard stats ("how many did staff X
+ * serve today") keep working.
+ */
+async function nextDepartmentSequence(
+  department: string,
+): Promise<{ seq: number }> {
+  const { start: today, dateStr } = getAppDayRange();
+  const counterKey = `DEPT-${department}-${dateStr}`;
+
+  const result = await Counter.findOneAndUpdate(
+    { _id: counterKey },
+    {
+      $inc: { seq: 1 },
+      $setOnInsert: {
+        date: today,
+        department,
+      },
+    },
+    { upsert: true, returnDocument: "after" },
+  );
+
+  if (!result || typeof result.seq !== "number") {
+    throw new Error("Failed to increment department counter");
+  }
+  return { seq: result.seq };
+}
+
+/**
  * Distribute ticket number for a specific staff member.
- * Each staff has their own independent counter that resets daily.
- * When opts.maxSeq is set, the daily cap is enforced atomically: the filter
- * only matches counters below the cap, so a counter at the limit makes the
- * upsert throw E11000 instead of incrementing past it.
+ *
+ * The **displayed** ticket number now comes from the shared per-department
+ * daily counter so it stays continuous (1, 2, 3, ...) across all windows.
+ * The per-staff counter is still incremented purely for per-staff stats.
+ *
+ * `opts.maxSeq` still enforces the per-staff daily cap (so one staff
+ * member can't be assigned more than their `dailyLimit`), but the ticket
+ * number is *not* derived from that cap.
  */
 export async function distributeTicketNumber(
   staffId: string,
@@ -46,55 +92,49 @@ export async function distributeTicketNumber(
       return { success: false, error: "Staff not found" };
     }
 
+    const baseRole = baseStaffRole(staff.roleName) ?? staff.roleName;
     const { start: today, dateStr } = getAppDayRange();
-    const counterKey = `STAFF-${staffId}-${dateStr}`;
 
-    const filter: any = { _id: counterKey };
+    // ── 1. Enforce per-staff daily cap via the per-staff counter ──────────
+    // The filter `seq < maxSeq` makes the upsert fail with E11000 once
+    // the staff member has hit their limit, which the caller catches.
+    const staffCounterKey = `STAFF-${staffId}-${dateStr}`;
+    const staffFilter: any = { _id: staffCounterKey };
     if (opts?.maxSeq) {
-      filter.$or = [
+      staffFilter.$or = [
         { seq: { $lt: opts.maxSeq } },
         { seq: { $exists: false } },
       ];
     }
 
-    // Atomic increment for this staff's counter
-    const result = await Counter.findOneAndUpdate(
-      filter,
+    await Counter.findOneAndUpdate(
+      staffFilter,
       {
         $inc: { seq: 1 },
         $setOnInsert: {
           date: today,
-          staffId: staffId,
-          department: staff.roleName,
+          staffId,
+          department: baseRole,
         },
       },
-      {
-        upsert: true,
-        returnDocument: "after",
-      },
+      { upsert: true, returnDocument: "after" },
     );
 
-    if (!result) {
-      return { success: false, error: "Failed to generate ticket number" };
-    }
+    // ── 2. Issue the ticket number from the GLOBAL department counter ─────
+    const { seq: departmentSeq } = await nextDepartmentSequence(baseRole);
 
-    const nextNumber = result.seq || 1;
-    // Pure number sequence
-    const ticketNumber = String(nextNumber);
-    // Full ID for database uniqueness
-    const ticketId = `${staff.roleName}-${staffId}-${dateStr}-${String(nextNumber).padStart(4, "0")}`;
+    const ticketNumber = String(departmentSeq);
+    const ticketId = `${baseRole}-${dateStr}-${String(departmentSeq).padStart(4, "0")}`;
 
     return {
       success: true,
       ticketNumber,
       ticketId,
-      queuePosition: nextNumber,
-      staffId: staffId,
+      queuePosition: departmentSeq,
+      staffId,
     };
   } catch (error: any) {
     if (error.code === 11000) {
-      // Either a concurrent first-create race, or the counter is at the cap
-      // (filter missed an existing doc, so the upsert tried to re-insert it).
       try {
         if (opts?.maxSeq) {
           const { dateStr } = getAppDayRange();
@@ -133,9 +173,13 @@ export async function distributeTicketNumber(
 
 /**
  * Distribute ticket to the least busy eligible staff in a department.
- * Eligibility: global queue open, counter open, within hours, not on break,
- * and under the counter's daily limit. Distinct failure reasons are returned
- * so the UI can explain why creation is unavailable.
+ * A "department" is a base role: "cashier", "registrar", "dean", "dsdw".
+ * Head staff of that department (head_cashier, head_dean, ...) are treated
+ * identically to regular staff — same pool, same eligibility, same cap.
+ *
+ * NOTE: Which staff member gets the ticket is decided by the per-staff
+ * load (for load balancing). The ticket NUMBER is decided by the shared
+ * department counter so it stays continuous.
  */
 export async function distributeTicketToAvailableStaff(
   department: string,
@@ -152,11 +196,10 @@ export async function distributeTicketToAvailableStaff(
       };
     }
 
-    // Find all active staff in this department
-    const departmentStaff = await Staff.find({
-      roleName: department,
-      status: "active",
-    }).lean();
+    const allActive = await Staff.find({ status: "active" }).lean();
+    const departmentStaff = allActive.filter(
+      (s) => baseStaffRole(s.roleName) === department,
+    );
 
     if (!departmentStaff || departmentStaff.length === 0) {
       return {
@@ -169,7 +212,6 @@ export async function distributeTicketToAvailableStaff(
     const { dateStr } = getAppDayRange();
     const nowMinutes = getAppNowMinutes();
 
-    // Evaluate every counter's state and load
     const counters = await Promise.all(
       departmentStaff.map(async (staff) => {
         const counterKey = `STAFF-${staff.staffId}-${dateStr}`;
@@ -211,8 +253,6 @@ export async function distributeTicketToAvailableStaff(
       };
     }
 
-    // Try least-loaded first; if a counter fills up in a race, exclude it
-    // and fall back to the next one.
     while (eligible.length > 0) {
       const leastBusy = eligible.reduce((min, staff) =>
         staff.load < min.load ? staff : min,
@@ -244,7 +284,9 @@ export async function distributeTicketToAvailableStaff(
 }
 
 /**
- * Get current queue position for a staff member
+ * Get current queue position for a staff member.
+ * Now reflects the SHARED department counter (the one that produced
+ * the displayed ticket number), not the per-staff counter.
  */
 export async function getStaffQueuePosition(staffId: string): Promise<{
   success: boolean;
@@ -260,10 +302,9 @@ export async function getStaffQueuePosition(staffId: string): Promise<{
       return { success: false, error: "Staff not found" };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-    const counterKey = `STAFF-${staffId}-${dateStr}`;
+    const baseRole = baseStaffRole(staff.roleName) ?? staff.roleName;
+    const { dateStr } = getAppDayRange();
+    const counterKey = `DEPT-${baseRole}-${dateStr}`;
 
     const counter = await Counter.findOne({ _id: counterKey });
 
@@ -282,7 +323,8 @@ export async function getStaffQueuePosition(staffId: string): Promise<{
 }
 
 /**
- * Get all staff counters for a department (including staff with 0 tickets)
+ * Get all staff counters for a department (including staff with 0 tickets).
+ * Uses the per-staff counter, which is still kept up to date for stats.
  */
 export async function getDepartmentStaffCounters(department: string) {
   try {
@@ -290,13 +332,11 @@ export async function getDepartmentStaffCounters(department: string) {
 
     const { start: today, end: tomorrow } = getAppDayRange();
 
-    // Find all active staff in this department
-    const allDepartmentStaff = await Staff.find({
-      roleName: department,
-      status: "active",
-    }).lean();
+    const allActive = await Staff.find({ status: "active" }).lean();
+    const allDepartmentStaff = allActive.filter(
+      (s) => baseStaffRole(s.roleName) === department,
+    );
 
-    // Find today's counters
     const counters = await Counter.find({
       _id: { $regex: `^STAFF-` },
       department: department,
@@ -306,7 +346,6 @@ export async function getDepartmentStaffCounters(department: string) {
       },
     }).lean();
 
-    // Map all staff with their counters (default to 0 if no counter yet)
     const enrichedCounters = allDepartmentStaff.map((staff) => {
       const counter = counters.find((c: any) => c.staffId === staff.staffId);
       return {
@@ -320,7 +359,6 @@ export async function getDepartmentStaffCounters(department: string) {
       };
     });
 
-    // Sort by staff name
     enrichedCounters.sort((a, b) => a.staffName.localeCompare(b.staffName));
 
     return {
@@ -334,7 +372,9 @@ export async function getDepartmentStaffCounters(department: string) {
 }
 
 /**
- * Get daily statistics for a staff member
+ * Get daily statistics for a staff member.
+ * `ticketsServed` / `nextTicketNumber` still use the per-staff counter.
+ * `totalDepartmentTickets` now reads from the shared department counter.
  */
 export async function getStaffDailyStats(staffId: string) {
   try {
@@ -345,39 +385,30 @@ export async function getStaffDailyStats(staffId: string) {
       return { success: false, error: "Staff not found" };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-    const counterKey = `STAFF-${staffId}-${dateStr}`;
+    const baseRole = baseStaffRole(staff.roleName) ?? staff.roleName;
 
-    const counter = await Counter.findOne({ _id: counterKey }).lean();
+    const { start: today, end: tomorrow, dateStr } = getAppDayRange();
 
-    // Get total department tickets for today
-    const deptCounters = await Counter.find({
-      _id: { $regex: `^STAFF-` },
-      department: staff.roleName,
-      date: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
-      },
+    const staffCounterKey = `STAFF-${staffId}-${dateStr}`;
+    const staffCounter = await Counter.findOne({
+      _id: staffCounterKey,
     }).lean();
 
-    const totalDeptTickets = deptCounters.reduce(
-      (sum, c: any) => sum + (c.seq || 0),
-      0,
-    );
+    const deptCounterKey = `DEPT-${baseRole}-${dateStr}`;
+    const deptCounter = await Counter.findOne({
+      _id: deptCounterKey,
+    }).lean();
 
-    // Get the next number this staff will serve
-    const nextNumber = counter ? (counter.seq || 0) + 1 : 1;
+    const nextNumber = staffCounter ? (staffCounter.seq || 0) + 1 : 1;
 
     return {
       success: true,
       stats: {
         staffName: `${staff.firstName} ${staff.lastName}`,
-        department: staff.roleName,
-        ticketsServed: counter ? counter.seq : 0,
+        department: baseRole,
+        ticketsServed: staffCounter ? staffCounter.seq : 0,
         nextTicketNumber: nextNumber,
-        totalDepartmentTickets: totalDeptTickets,
+        totalDepartmentTickets: deptCounter ? deptCounter.seq || 0 : 0,
         date: dateStr,
       },
     };
@@ -391,29 +422,30 @@ export async function getStaffDailyStats(staffId: string) {
 }
 
 /**
- * Get department statistics
+ * Get department statistics.
+ * Reads from the shared department counter.
  */
 export async function getDepartmentStats(department: string) {
   try {
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { dateStr } = getAppDayRange();
 
-    const counters = await Counter.find({
-      _id: { $regex: `^STAFF-` },
-      department: department,
-      date: {
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
-      },
+    const deptCounterKey = `DEPT-${department}-${dateStr}`;
+    const deptCounter = await Counter.findOne({
+      _id: deptCounterKey,
     }).lean();
 
-    const totalTickets = counters.reduce(
-      (sum, c: any) => sum + (c.seq || 0),
-      0,
-    );
-    const activeStaffCount = counters.length;
+    // Per-staff counter count for "active staff" (only staff with >=1 ticket)
+    const { start: today, end: tomorrow } = getAppDayRange();
+    const staffCounters = await Counter.find({
+      _id: { $regex: `^STAFF-` },
+      department: department,
+      date: { $gte: today, $lt: tomorrow },
+    }).lean();
+
+    const totalTickets = deptCounter ? deptCounter.seq || 0 : 0;
+    const activeStaffCount = staffCounters.length;
     const averagePerStaff =
       activeStaffCount > 0 ? Math.round(totalTickets / activeStaffCount) : 0;
 
@@ -434,7 +466,10 @@ export async function getDepartmentStats(department: string) {
 }
 
 /**
- * Reset daily counter for a staff member (admin only)
+ * Reset daily counter for a staff member (admin only).
+ * Only resets the per-staff counter — the department sequence is NOT
+ * reset here on purpose, otherwise resetting one staff member would
+ * cause duplicate ticket numbers across the department.
  */
 export async function resetStaffCounter(staffId: string): Promise<{
   success: boolean;
@@ -447,9 +482,7 @@ export async function resetStaffCounter(staffId: string): Promise<{
 
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    const { dateStr } = getAppDayRange();
     const counterKey = `STAFF-${staffId}-${dateStr}`;
 
     await Counter.findOneAndUpdate(
@@ -469,7 +502,10 @@ export async function resetStaffCounter(staffId: string): Promise<{
 }
 
 /**
- * Reset all counters for a department (admin only)
+ * Reset all counters for a department (admin only).
+ * Resets BOTH the shared department counter and every per-staff counter.
+ * Only do this at the start of a new day or if you really want to
+ * restart the whole department's numbering from 1.
  */
 export async function resetDepartmentCounters(department: string): Promise<{
   success: boolean;
@@ -482,20 +518,24 @@ export async function resetDepartmentCounters(department: string): Promise<{
 
     await connectDB();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const { start: today, dateStr } = getAppDayRange();
 
-    // Find all staff in department
-    const staff = await Staff.find({
-      roleName: department,
-      status: "active",
-    }).lean();
+    // Reset the shared department counter
+    const deptCounterKey = `DEPT-${department}-${dateStr}`;
+    await Counter.findOneAndUpdate(
+      { _id: deptCounterKey },
+      { seq: 0, date: today, department },
+      { upsert: true },
+    );
 
-    // Reset each staff counter
+    // Reset every per-staff counter in this department
+    const allActive = await Staff.find({ status: "active" }).lean();
+    const staff = allActive.filter(
+      (s) => baseStaffRole(s.roleName) === department,
+    );
+
     for (const s of staff) {
-      const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const counterKey = `STAFF-${s.staffId}-${dateStr}`;
-
       await Counter.findOneAndUpdate(
         { _id: counterKey },
         { seq: 0 },
@@ -512,4 +552,3 @@ export async function resetDepartmentCounters(department: string): Promise<{
     };
   }
 }
-  

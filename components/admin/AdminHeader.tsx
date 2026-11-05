@@ -27,6 +27,7 @@ import { getStaffById } from "@/actions/staff";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { baseStaffRole } from "@/lib/roles";
 
 interface AdminHeaderProps {
   user: {
@@ -77,11 +78,19 @@ const breadcrumbMap: Record<string, string> = {
   cashier: "Cashier",
 };
 
+// Keyed by BASE role ("dean"), because baseStaffRole() collapses head_* → base.
 const roleNames: Record<string, string> = {
   registrar: "Registrar",
   dean: "Dean",
   dsdw: "DSDW",
   cashier: "Cashier",
+};
+
+// Optional: show seniority in the label
+const headRoleNames: Record<string, string> = {
+  head_registrar: "Head Registrar",
+  head_dean: "Head Dean",
+  head_cashier: "Head Cashier",
 };
 
 // "3" -> "Window 3", "Window 3" -> "Window 3"
@@ -97,9 +106,16 @@ export function AdminHeader({ user }: AdminHeaderProps) {
   const { update } = useSession();
 
   const isAdmin = user?.role === "1";
-  const staffRole = user?.staffRole || "";
-  const isCashier = !isAdmin && staffRole === "cashier";
-  const roleDisplayName = isAdmin ? "Admin" : roleNames[staffRole] || "Staff";
+
+  // Collapse head_dean → dean, head_cashier → cashier, etc.
+  const rawStaffRole = user?.staffRole || "";
+  const staffRole = baseStaffRole(rawStaffRole) ?? ""; // "dean" | "registrar" | "cashier" | "dsdw" | ""
+  const isCashier = !isAdmin && staffRole === "cashier"; // now true for head_cashier too
+
+  // Prefer the nicer head label when applicable ("Head Dean"), else "Dean"
+  const roleDisplayName = isAdmin
+    ? "Admin"
+    : (headRoleNames[rawStaffRole] ?? roleNames[staffRole] ?? "Staff");
 
   // Cashier window: use it from the session if present, otherwise fetch it
   const [cashierWindow, setCashierWindow] = useState<string>(
@@ -124,7 +140,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
 
   const windowLabel = isCashier ? formatWindow(cashierWindow) : "";
 
-  // e.g. "Cashier · Window 3"
+  // e.g. "Head Dean" or "Cashier · Window 3" or "Registrar"
   const roleLine = isAdmin
     ? user?.email
     : windowLabel
@@ -151,7 +167,9 @@ export function AdminHeader({ user }: AdminHeaderProps) {
     });
   }, [pathname]);
 
-  // Route to the correct settings page depending on who's logged in
+  // Route to the correct settings page depending on who's logged in.
+  // Staff settings live under the BASE department (dean/registrar/cashier/dsdw),
+  // never under "head_dean".
   const settingsHref = isAdmin
     ? "/admin/settings"
     : `/staff/${staffRole || "cashier"}/settings`;

@@ -34,10 +34,19 @@ import {
   UserCheck,
   Send,
   Building2,
+  Banknote,
+  Crown,
+  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 
-type StaffRole = "dean" | "registrar" | "cashier";
+type StaffRole =
+  | "dean"
+  | "registrar"
+  | "cashier"
+  | "head_cashier"
+  | "head_dean"
+  | "head_registrar";
 
 const STAFF_ROLES = [
   {
@@ -61,6 +70,27 @@ const STAFF_ROLES = [
     description: "Handles payments, assessments, and financial transactions",
     icon: Wallet,
     accessLevel: 6,
+  },
+  {
+    value: "head_cashier" as StaffRole,
+    label: "Head Cashier",
+    description: "Oversees cashiers, payments, and financial transactions",
+    icon: Banknote,
+    accessLevel: 2,
+  },
+  {
+    value: "head_dean" as StaffRole,
+    label: "Head Dean",
+    description: "Oversees deans and academic concerns across departments",
+    icon: Crown,
+    accessLevel: 2,
+  },
+  {
+    value: "head_registrar" as StaffRole,
+    label: "Head Registrar",
+    description: "Oversees registrar operations and student records",
+    icon: ShieldCheck,
+    accessLevel: 2,
   },
 ];
 
@@ -112,6 +142,9 @@ export function CreateUserForm() {
     dean: "Dean",
     registrar: "Registrar",
     cashier: "Cashier",
+    head_cashier: "Head Cashier",
+    head_dean: "Head Dean",
+    head_registrar: "Head Registrar",
   };
 
   // Cycle through loading steps - faster 800ms intervals

@@ -1,8 +1,9 @@
 // app/staff/[role]/dashboard/page.tsx
 export const dynamic = "force-dynamic";
 
-import { getSession } from "@/actions/auth";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { baseStaffRole } from "@/lib/roles";
 import { getStaffQueueStats, getStaffTickets } from "@/actions/ticket";
 import { getStaffDailyStats } from "@/actions/ticketNumberDistribution";
 import { Badge } from "@/components/ui/badge";
@@ -64,36 +65,39 @@ export default async function StaffDashboardPage({
 }) {
   const { role } = await params;
 
-  const { success, session } = await getSession();
-  if (!success || !session) redirect("/?error=unauthorized");
+  const session = await auth();
+  if (!session?.user) redirect("/?error=unauthorized");
 
-  // Match the layout's policy: cashier ("6"), registrar ("3"), and dean ("4")
-  const staffRoles = ["3", "4", "6"];
-  if (!staffRoles.includes(session.user?.role || "")) {
+  const sessionBaseRole = session.user.staffRole
+    ? baseStaffRole(session.user.staffRole)
+    : null;
+
+  if (!sessionBaseRole) {
     redirect("/?error=forbidden");
   }
 
-  if (session.user?.mustChangePassword) {
+  if (session.user.mustChangePassword) {
     redirect("/change-password");
   }
 
-  const staffId = session.user?.staffId || "";
-  const staffName = session.user?.name || "Staff";
+  if (role !== sessionBaseRole) {
+    redirect(`/staff/${sessionBaseRole}/dashboard`);
+  }
 
-  // Registrar gets a document-request dashboard instead of the queue one
-  if (role === "registrar") {
+  const staffId = session.user.staffId || "";
+  const staffName = session.user.name || "Staff";
+
+  if (sessionBaseRole === "registrar") {
     return <RegistrarDashboardView staffName={staffName} />;
   }
 
-  // Role display names
   const roleNames: Record<string, string> = {
     registrar: "Registrar",
     dean: "Dean",
     cashier: "Cashier",
   };
-  const roleDisplayName = roleNames[role] || "Staff";
+  const roleDisplayName = roleNames[sessionBaseRole] || "Staff";
 
-  // Fetch data
   const [queueStats, staffTickets, dailyStats] = await Promise.all([
     getStaffQueueStats(staffId),
     getStaffTickets(staffId),

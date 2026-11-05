@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatHHMM } from "@/lib/time";
+import { baseStaffRole } from "@/lib/roles";
 
 const FONT = { fontFamily: "'Plus Jakarta Sans', sans-serif" } as const;
 const POLL_MS = 10000;
@@ -105,8 +106,13 @@ export function StaffSettingsView({ department }: StaffSettingsViewProps) {
         }
 
         const userStaffId = sessionResult.session.user?.staffId;
-        const userStaffRole =
+        const rawStaffRole =
           sessionResult.session.user?.staffRole || department;
+
+        // ✅ Collapse head_dean → dean, head_registrar → registrar, etc.
+        // so a head staffer matches the department prop the same as a
+        // regular staffer would.
+        const userBaseRole = baseStaffRole(rawStaffRole);
 
         if (!userStaffId) {
           setLoadError("Staff ID not found");
@@ -115,7 +121,7 @@ export function StaffSettingsView({ department }: StaffSettingsViewProps) {
           return;
         }
 
-        if (userStaffRole !== department) {
+        if (!userBaseRole || userBaseRole !== department) {
           setLoadError("You do not have access to this page");
           setIsLoading(false);
           setIsRefreshing(false);

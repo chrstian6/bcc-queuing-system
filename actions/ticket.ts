@@ -16,7 +16,7 @@ import {
   requireSelfStaffOrAdmin,
   UNAUTHORIZED_ERROR,
 } from "@/lib/authz";
-import { ROLES } from "@/lib/roles";
+import { ROLES, baseStaffRole } from "@/lib/roles";
 import { getAppDayRange } from "@/lib/time";
 import { notifyNextInLine } from "./ticket-notification";
 
@@ -86,6 +86,7 @@ const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
     "faculty-concern",
     "curriculum-review",
     "academic-advisory",
+    "clearance",
   ],
   cashier: [
     "tuition-payment",
@@ -93,6 +94,8 @@ const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
     "document-payment",
     "other-school-fees",
     "assessment",
+    "examination-payment",
+    "other-payment",
   ],
   registrar: [
     "certificate-enrollment",
@@ -108,15 +111,25 @@ const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
 const TRANSACTIONS_NEEDING_DESCRIPTION = [
   "other-school-fees",
   "other-document",
+  "other-payment",
 ];
 
+/**
+ * Collapse the caller's role to the BASE department they act within.
+ * "head_cashier" → "cashier", "head_dean" → "dean", etc.
+ *
+ * Tickets store department as the BASE role (see distributeTicketNumber),
+ * so every read path must normalize here or head staff queries will miss
+ * every ticket they were assigned.
+ */
 function resolveDepartment(staffData: any, session: any): string {
-  return (
+  const raw =
     staffData?.staffRole ||
+    staffData?.roleName ||
     staffData?.department ||
     session?.user?.staffRole ||
-    "cashier"
-  );
+    "cashier";
+  return baseStaffRole(raw) ?? raw;
 }
 
 /**
@@ -691,10 +704,6 @@ export async function getNextToServe(department?: string) {
 // REPORTS FUNCTION
 // ============================================================
 
-/**
- * Get tickets for reports with date range support
- * Accessible by ADMIN, DEAN, REGISTRAR, CASHIER
- */
 export async function getReportsTickets(
   department: string,
   dateRange: "today" | "week" | "month" | "all" = "week",
@@ -729,13 +738,9 @@ export async function getReportsTickets(
       query.createdAt = { $gte: startDate };
     }
 
-    console.log("getReportsTickets query:", JSON.stringify(query));
-
     const tickets = await Ticket.find(query as any)
       .sort({ createdAt: -1 })
       .lean();
-
-    console.log(`Found ${tickets.length} tickets for ${department}`);
 
     return { success: true, tickets: JSON.parse(JSON.stringify(tickets)) };
   } catch (error) {
@@ -751,11 +756,6 @@ export async function getReportsTickets(
 // Staff functions
 // ============================================================
 
-/**
- * Queue data for ONE staff member (e.g. a single cashier):
- * - pending tickets assigned to them
- * - the ticket they are currently serving
- */
 export async function getStaffQueueData(staffId: string) {
   try {
     const session = await requireSelfStaffOrAdmin(staffId);
@@ -920,8 +920,6 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
     const { start: today, end: tomorrow } = getAppDayRange();
     const now = new Date();
 
-    // Ticket numbers are per-staff counters, so "1" exists for every cashier
-    // every day. Scope by assignedTo + today to hit exactly the right ticket.
     const ticket = await Ticket.findOneAndUpdate(
       {
         ticketNumber,
@@ -965,7 +963,6 @@ export async function serveTicket(ticketNumber: string, staffId: string) {
       ).catch((err) => console.error("Serving SMS failed:", err));
     }
 
-    // Notify the next person in line (once, guarded by youreNextNotifiedAt)
     await notifyHeadOfQueueOnce(department, staffId);
 
     revalidatePath("/staff/cashier/dashboard");
@@ -1214,7 +1211,6 @@ export async function serveNextTicket(department?: string) {
 
     if (!nextTicket) return { success: false, error: "No pending tickets" };
 
-    // Notify the next person in line (once, guarded by youreNextNotifiedAt)
     const servedDept = (nextTicket as any).department || department || "";
     if (servedDept) {
       await notifyHeadOfQueueOnce(servedDept, "admin");
@@ -1309,8 +1305,6 @@ export async function cancelTicket(ticketNumber: string) {
       status: { $in: ["pending", "serving"] },
     };
 
-    // Ticket numbers repeat across staff, so non-admins can only cancel
-    // tickets assigned to them or currently served by them.
     if (!isAdmin) {
       filter.$or = [{ assignedTo: changedBy }, { servedBy: changedBy }];
     }
@@ -1396,7 +1390,6 @@ export async function updateTicketStatus(
 
     if (!ticket) return { success: false, error: "Ticket not found" };
 
-    // If we just moved a ticket to "serving", notify the next person in line
     if (status === "serving") {
       const servedDept = (ticket as any).department;
       if (servedDept) {

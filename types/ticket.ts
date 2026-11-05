@@ -70,12 +70,15 @@ export const VALID_TRANSACTION_TYPES = [
   "faculty-concern",
   "curriculum-review",
   "academic-advisory",
+  "clearance",
   // Cashier
   "tuition-payment",
   "miscellaneous-fee",
   "document-payment",
   "other-school-fees",
   "assessment",
+  "examination-payment",
+  "other-payment",
   // Registrar
   "certificate-enrollment",
   "transcript-records",
@@ -299,7 +302,10 @@ export const createTicketSchema = z
   )
   .refine(
     (data) => {
-      if (data.transactionType === "other-school-fees") {
+      if (
+        data.transactionType === "other-school-fees" ||
+        data.transactionType === "other-payment"
+      ) {
         return (
           data.transactionDescription &&
           data.transactionDescription.trim().length > 0
@@ -392,6 +398,7 @@ export const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
     "faculty-concern",
     "curriculum-review",
     "academic-advisory",
+    "clearance",
   ],
   cashier: [
     "tuition-payment",
@@ -399,6 +406,8 @@ export const DEPARTMENT_TRANSACTIONS: Record<string, string[]> = {
     "document-payment",
     "other-school-fees",
     "assessment",
+    "examination-payment",
+    "other-payment",
   ],
   registrar: [
     "certificate-enrollment",
@@ -421,12 +430,15 @@ export const TRANSACTION_LABELS: Record<string, string> = {
   "faculty-concern": "Faculty Concern",
   "curriculum-review": "Curriculum Review",
   "academic-advisory": "Academic Advisory",
+  clearance: "Clearance",
   // Cashier
   "tuition-payment": "Tuition Payment",
   "miscellaneous-fee": "Miscellaneous Fee Payment",
   "document-payment": "Document Payment",
   "other-school-fees": "Other School Fees",
   assessment: "Assessment",
+  "examination-payment": "Examination Payment",
+  "other-payment": "Other Payment",
   // Registrar
   "certificate-enrollment": "Certificate of Enrollment",
   "transcript-records": "Transcript of Records",

@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
+import { ROLES, STAFF_SESSION_ROLES } from "@/lib/roles";
 
 const { auth } = NextAuth(authConfig);
 
@@ -23,7 +24,9 @@ export default auth((req) => {
     (route) => pathname === route || pathname.startsWith(route + "/"),
   );
   const isApiRoute =
-    pathname.startsWith("/api/auth") || pathname.startsWith("/api/public");
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/public") ||
+    pathname.startsWith("/api/debug"); // ← TEMP: remove after debugging
   const isStaticFile =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/images") ||
@@ -38,22 +41,25 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (pathname.startsWith("/admin") && req.auth.user?.role !== "1") {
+  if (pathname.startsWith("/admin") && req.auth.user?.role !== ROLES.ADMIN) {
     const homeUrl = new URL("/", req.url);
     homeUrl.searchParams.set("error", "forbidden");
     return NextResponse.redirect(homeUrl);
   }
 
-  if (pathname.startsWith("/student") && req.auth.user?.role !== "2") {
+  if (
+    pathname.startsWith("/student") &&
+    req.auth.user?.role !== ROLES.STUDENT
+  ) {
     const homeUrl = new URL("/", req.url);
     homeUrl.searchParams.set("error", "forbidden");
     return NextResponse.redirect(homeUrl);
   }
 
-  // Staff portal: registrar ("3"), dean ("4"), and cashier ("6")
+  // Staff portal: any base OR head staff role (3-9).
   if (
     pathname.startsWith("/staff") &&
-    !["3", "4", "6"].includes(req.auth.user?.role ?? "")
+    !STAFF_SESSION_ROLES.includes(req.auth.user?.role ?? "")
   ) {
     const homeUrl = new URL("/", req.url);
     homeUrl.searchParams.set("error", "forbidden");

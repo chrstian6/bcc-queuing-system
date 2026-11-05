@@ -1,4 +1,4 @@
-// actions/staff.ts
+// app/actions/staff.ts
 "use server";
 
 import connectDB from "@/lib/mongodb";
@@ -7,17 +7,27 @@ import User from "@/models/User";
 import { revalidatePath } from "next/cache";
 import { sendWelcomeEmail } from "@/lib/email";
 import { requireRole, UNAUTHORIZED_ERROR } from "@/lib/authz";
-import { ROLES } from "@/lib/roles";
+import { ROLES, baseStaffRole } from "@/lib/roles";
 import { getAppDayRange } from "@/lib/time";
+import {
+  canCreateRole,
+  subordinateDepartment,
+  type StaffRoleName,
+} from "@/lib/roleCreationMatrix";
 
 interface CreateStaffData {
   facultyId: string;
   firstName: string;
   lastName: string;
   email: string;
-  roleName: "registrar" | "dean" | "dsdw" | "cashier";
-  roleAccessLevel?: number;
+  roleName: StaffRoleName;
   cashierWindow?: string;
+  /**
+   * DEPRECATED — ignored by the server. Kept in the type so the existing
+   * admin form (which still sends it) doesn't break at compile time.
+   * The actual access level is always derived from `roleName`.
+   */
+  roleAccessLevel?: number;
 }
 
 interface StaffResponse {
@@ -37,13 +47,7 @@ interface StaffResponse {
   };
 }
 
-/**
- * Generate a simple, easy-to-read temporary password
- * Format: word + number (e.g., "blue47", "happy23")
- * Always at least 6 characters (4+ letter word + 2-digit number)
- */
 function generateSimplePassword(): string {
-  // Only use words with 4+ letters to ensure password is at least 6 chars
   const words = [
     "blue",
     "gold",
@@ -79,18 +83,57 @@ function generateSimplePassword(): string {
     "hawk",
     "dove",
   ];
-
   const word = words[Math.floor(Math.random() * words.length)];
-  const number = Math.floor(Math.random() * 90) + 10; // 10-99
+  const number = Math.floor(Math.random() * 90) + 10;
   return `${word}${number}`;
+}
+
+/**
+ * Server-side source of truth for roleAccessLevel. Never trust the client.
+ */
+function getAccessLevelForRole(roleName: StaffRoleName): number {
+  switch (roleName) {
+    case "head_cashier":
+    case "head_dean":
+    case "head_registrar":
+      return 2;
+    case "registrar":
+      return 3;
+    case "dean":
+      return 4;
+    case "dsdw":
+      return 5;
+    case "cashier":
+      return 6;
+    default:
+      return 6;
+  }
 }
 
 export async function createStaffAccount(
   data: CreateStaffData,
 ): Promise<StaffResponse> {
   try {
-    const session = await requireRole(ROLES.ADMIN);
+    // Admin + head roles can reach this action. The matrix below decides
+    // which target role each of them may create.
+    const session = await requireRole(
+      ROLES.ADMIN,
+      "7", // head_registrar
+      "8", // head_dean
+      "9", // head_cashier
+    );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
+
+    const isAdmin = session.user.role === ROLES.ADMIN;
+    const loggedInRoleName = session.user.staffRole || null;
+
+    // Enforce the creation matrix.
+    if (!canCreateRole(loggedInRoleName, data.roleName, isAdmin)) {
+      return {
+        success: false,
+        error: "You do not have permission to create this role.",
+      };
+    }
 
     if (
       !data.facultyId ||
@@ -110,9 +153,19 @@ export async function createStaffAccount(
       return { success: false, error: "Window number is required for cashier" };
     }
 
+    if (
+      data.roleName !== "cashier" &&
+      data.cashierWindow !== undefined &&
+      data.cashierWindow !== ""
+    ) {
+      return {
+        success: false,
+        error: "Cashier window is only valid for cashier accounts.",
+      };
+    }
+
     await connectDB();
 
-    // Check if email already exists in Staff collection
     const existingStaffEmail = await Staff.findOne({
       email: data.email.toLowerCase(),
     });
@@ -123,7 +176,6 @@ export async function createStaffAccount(
       };
     }
 
-    // Check if email already exists in User (Admin) collection
     const existingUserEmail = await User.findOne({
       email: data.email.toLowerCase(),
     });
@@ -134,7 +186,6 @@ export async function createStaffAccount(
       };
     }
 
-    // Check if faculty ID already exists in Staff collection
     const existingStaffFacultyId = await Staff.findOne({
       facultyId: data.facultyId,
     });
@@ -145,29 +196,10 @@ export async function createStaffAccount(
       };
     }
 
-    // Generate temporary password (always 6+ characters)
     const tempPassword = generateSimplePassword();
 
-    // Set role access level based on role if not provided
-    let roleAccessLevel = data.roleAccessLevel || 6;
-    if (!data.roleAccessLevel) {
-      switch (data.roleName) {
-        case "dean":
-          roleAccessLevel = 4;
-          break;
-        case "registrar":
-          roleAccessLevel = 3;
-          break;
-        case "cashier":
-          roleAccessLevel = 6;
-          break;
-        case "dsdw":
-          roleAccessLevel = 5;
-          break;
-        default:
-          roleAccessLevel = 6;
-      }
-    }
+    // Derived on the server — client cannot override.
+    const roleAccessLevel = getAccessLevelForRole(data.roleName);
 
     const staffData: any = {
       facultyId: data.facultyId,
@@ -176,7 +208,7 @@ export async function createStaffAccount(
       email: data.email.toLowerCase(),
       password: tempPassword,
       roleName: data.roleName,
-      roleAccessLevel: roleAccessLevel,
+      roleAccessLevel,
       status: "active",
       mustChangePassword: true,
     };
@@ -188,7 +220,6 @@ export async function createStaffAccount(
     const staff = new Staff(staffData);
     await staff.save();
 
-    // Try to send welcome email, but don't fail if it doesn't work
     try {
       await sendWelcomeEmail({
         email: staff.email,
@@ -199,11 +230,13 @@ export async function createStaffAccount(
       });
     } catch (emailError) {
       console.error("Failed to send welcome email:", emailError);
-      // Continue anyway - account is created
     }
 
     revalidatePath("/admin/users");
     revalidatePath("/admin/users/staff");
+    revalidatePath("/staff/cashier/users");
+    revalidatePath("/staff/dean/users");
+    revalidatePath("/staff/registrar/users");
 
     const responseStaff: any = {
       staffId: staff.staffId,
@@ -226,7 +259,7 @@ export async function createStaffAccount(
     console.error("Error creating staff account:", error);
 
     if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
+      const field = Object.keys(error.keyPattern || {})[0];
       const messages: Record<string, string> = {
         email: "Email already exists",
         facultyId: "Faculty ID already exists",
@@ -245,6 +278,47 @@ export async function createStaffAccount(
     return {
       success: false,
       error: "Failed to create staff account. Please try again.",
+    };
+  }
+}
+
+/**
+ * Subordinate staff list for head staff pages.
+ */
+export async function getMySubordinateStaff() {
+  try {
+    const session = await requireRole(ROLES.ADMIN, "7", "8", "9");
+    if (!session)
+      return { success: false, error: UNAUTHORIZED_ERROR, staff: [] };
+
+    const isAdmin = session.user.role === ROLES.ADMIN;
+    const dept = subordinateDepartment(session.user.staffRole);
+    if (!dept && !isAdmin) {
+      return {
+        success: false,
+        error: "You do not have access to this list.",
+        staff: [],
+      };
+    }
+
+    await connectDB();
+
+    const allStaff = await Staff.find({}).sort({ createdAt: -1 }).lean();
+    const staff = isAdmin
+      ? allStaff
+      : allStaff.filter(
+          (s: any) =>
+            baseStaffRole(s.roleName) === dept &&
+            !String(s.roleName || "").startsWith("head_"),
+        );
+
+    return { success: true, staff: JSON.parse(JSON.stringify(staff)) };
+  } catch (error) {
+    console.error("Error fetching subordinate staff:", error);
+    return {
+      success: false,
+      error: "Failed to fetch staff",
+      staff: [],
     };
   }
 }
@@ -268,23 +342,19 @@ export async function getAllStaff() {
   }
 }
 
-/**
- * PUBLIC (no auth) — used by the live queue display (/live-queue) to show
- * which cashier is at which window. Returns ONLY the window and display
- * name of active cashiers; no emails, IDs, or other staff data.
- */
 export async function getPublicCashierWindows(): Promise<{
   success: boolean;
   windows: { window: string; name: string }[];
 }> {
   try {
     await connectDB();
-    const cashiers = await Staff.find({
-      roleName: "cashier",
-      status: "active",
-    } as any)
-      .select("firstName lastName cashierWindow")
+    const allActive = await Staff.find({ status: "active" })
+      .select("firstName lastName roleName cashierWindow")
       .lean();
+
+    const cashiers = allActive.filter(
+      (s: any) => baseStaffRole(s.roleName) === "cashier",
+    );
 
     const windows = (cashiers as any[])
       .map((s) => ({
@@ -306,6 +376,9 @@ export async function getStaffById(staffId: string) {
       ROLES.ADMIN,
       ROLES.REGISTRAR,
       ROLES.CASHIER,
+      "7",
+      "8",
+      "9",
     );
     if (!session) return { success: false, error: UNAUTHORIZED_ERROR };
 
@@ -443,6 +516,9 @@ export async function getStaffStats() {
       deanCount,
       dsdwCount,
       cashierCount,
+      headCashierCount,
+      headDeanCount,
+      headRegistrarCount,
     ] = await Promise.all([
       Staff.countDocuments(),
       Staff.countDocuments({ status: "active" } as any),
@@ -452,6 +528,9 @@ export async function getStaffStats() {
       Staff.countDocuments({ roleName: "dean" } as any),
       Staff.countDocuments({ roleName: "dsdw" } as any),
       Staff.countDocuments({ roleName: "cashier" } as any),
+      Staff.countDocuments({ roleName: "head_cashier" } as any),
+      Staff.countDocuments({ roleName: "head_dean" } as any),
+      Staff.countDocuments({ roleName: "head_registrar" } as any),
     ]);
 
     return {
@@ -466,6 +545,9 @@ export async function getStaffStats() {
           dean: deanCount,
           dsdw: dsdwCount,
           cashier: cashierCount,
+          head_cashier: headCashierCount,
+          head_dean: headDeanCount,
+          head_registrar: headRegistrarCount,
         },
       },
     };

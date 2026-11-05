@@ -17,6 +17,15 @@ export interface ICounterSettings {
   dailyLimit: number;
 }
 
+export type StaffRole =
+  | "registrar"
+  | "dean"
+  | "dsdw"
+  | "cashier"
+  | "head_cashier"
+  | "head_dean"
+  | "head_registrar";
+
 export interface IStaff extends Document {
   staffId: string;
   facultyId: string;
@@ -24,7 +33,7 @@ export interface IStaff extends Document {
   lastName: string;
   email: string;
   password: string;
-  roleName: string;
+  roleName: StaffRole;
   roleAccessLevel: number;
   cashierWindow: string;
   status: "active" | "inactive" | "suspended";
@@ -79,7 +88,15 @@ const staffSchema = new mongoose.Schema<IStaff>(
     roleName: {
       type: String,
       required: [true, "Role name is required"],
-      enum: ["registrar", "dean", "dsdw", "cashier"],
+      enum: [
+        "registrar",
+        "dean",
+        "dsdw",
+        "cashier",
+        "head_cashier",
+        "head_dean",
+        "head_registrar",
+      ],
     },
     roleAccessLevel: {
       type: Number,
