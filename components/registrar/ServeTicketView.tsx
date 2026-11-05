@@ -49,10 +49,10 @@ interface Ticket {
 }
 
 interface SessionUser {
+  id?: string;
   staffId?: string;
   staffRole?: string;
-  name?: string;
-  [key: string]: unknown;
+  name?: string | null;
 }
 
 interface ServeTicketViewProps {
@@ -193,7 +193,8 @@ export function ServeTicketView({ department }: ServeTicketViewProps) {
           router.push("/?error=unauthorized");
           return;
         }
-        const sessionUser = sessionResult.session.user as SessionUser;
+        const sessionUser = sessionResult.session
+          .user as unknown as SessionUser;
         setUser(sessionUser);
         const staffId = sessionUser?.staffId;
         const staffRole = sessionUser?.staffRole || department;
