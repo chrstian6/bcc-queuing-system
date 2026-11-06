@@ -486,14 +486,13 @@ export default function TransactionModal({
   const validateStep1 = () => {
     const newErrors: Record<string, string> = {};
 
-    if (studentInfo.schoolId.trim()) {
-      if (!/^\d+$/.test(studentInfo.schoolId))
-        newErrors.schoolId = "School ID must contain only digits";
-      else if (
-        studentInfo.schoolId.length < 4 &&
-        studentInfo.schoolId.length > 0
-      )
-        newErrors.schoolId = "School ID must be at least 4 digits";
+    // School ID is required
+    if (!studentInfo.schoolId.trim()) {
+      newErrors.schoolId = "School ID is required";
+    } else if (!/^\d+$/.test(studentInfo.schoolId)) {
+      newErrors.schoolId = "School ID must contain only digits";
+    } else if (studentInfo.schoolId.length < 4) {
+      newErrors.schoolId = "School ID must be at least 4 digits";
     }
 
     if (!studentInfo.firstName.trim()) newErrors.firstName = "Required";
@@ -642,7 +641,7 @@ export default function TransactionModal({
             purpose: purposeString,
             copies: 1,
             student: {
-              schoolId: studentInfo.schoolId.trim() || "",
+              schoolId: studentInfo.schoolId.trim(),
               firstName: studentInfo.firstName.trim(),
               lastName: studentInfo.lastName.trim(),
               middleName: studentInfo.middleName.trim(),
@@ -686,7 +685,7 @@ export default function TransactionModal({
         amount: ticketAmount,
         department: department || "cashier",
         student: {
-          schoolId: studentInfo.schoolId.trim() || "",
+          schoolId: studentInfo.schoolId.trim(),
           firstName: sanitizeInput(studentInfo.firstName),
           lastName: sanitizeInput(studentInfo.lastName),
           middleName: sanitizeInput(studentInfo.middleName) || undefined,
@@ -906,7 +905,8 @@ export default function TransactionModal({
                       >
                         <div className="space-y-4">
                           <Field
-                            label="School ID (optional)"
+                            label="School ID"
+                            required
                             error={errors.schoolId}
                           >
                             <Input
@@ -921,7 +921,7 @@ export default function TransactionModal({
                                 setStudentInfo((p) => ({ ...p, schoolId: v }));
                                 clearErr("schoolId");
                               }}
-                              placeholder="Enter school ID (if applicable)"
+                              placeholder="Enter school ID"
                               maxLength={15}
                               className="rounded-xl border-[#E2E8F0] focus-visible:ring-1 focus-visible:ring-[#0000CC] focus-visible:border-[#0000CC] h-11"
                             />
