@@ -105,23 +105,113 @@ function normalizeWaiting(...candidates: unknown[]): number {
 }
 
 /**
- * Reads the staff (cashier) name for a window from whichever field the API
- * sends: staffName / staff_name / cashierName, or a nested staff object.
+ * Turns a string or a person-like object into a display name.
+ * Accepts: "Juan Dela Cruz", { name }, { fullName }, { firstName, lastName }.
+ */
+function readPersonName(value: any): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const s = value.trim();
+    return s || null;
+  }
+  if (typeof value === "object") {
+    const full =
+      value.name ??
+      value.fullName ??
+      value.full_name ??
+      value.displayName ??
+      value.display_name ??
+      [
+        value.firstName ?? value.first_name,
+        value.middleName ?? value.middle_name,
+        value.lastName ?? value.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    if (full && String(full).trim()) return String(full).trim();
+  }
+  return null;
+}
+
+// Keys that may hold the staff member's name on a department or ticket object.
+const STAFF_KEYS = [
+  "staffName",
+  "staff_name",
+  "cashierName",
+  "cashier_name",
+  "deanName",
+  "dean_name",
+  "officerName",
+  "officer_name",
+  "assignedStaffName",
+  "assigned_staff_name",
+  "servedByName",
+  "served_by_name",
+  "staff",
+  "assignedStaff",
+  "assigned_staff",
+  "assignedTo",
+  "assigned_to",
+  "servedBy",
+  "served_by",
+  "handledBy",
+  "handled_by",
+  "cashier",
+  "dean",
+  "officer",
+  "user",
+  "personnel",
+];
+
+/**
+ * Reads the staff name for a window / office from whichever field the API
+ * sends. Checks many possible keys, nested objects, and arrays of staff.
  */
 function normalizeStaffName(raw: any): string | null {
-  const direct =
-    raw?.staffName ??
-    raw?.staff_name ??
-    raw?.cashierName ??
-    raw?.cashier_name ??
-    null;
-  if (direct && String(direct).trim()) return String(direct).trim();
+  if (!raw || typeof raw !== "object") return null;
 
-  const staff = raw?.staff;
-  if (staff && typeof staff === "object") {
-    const full =
-      staff.name ?? [staff.firstName, staff.lastName].filter(Boolean).join(" ");
-    if (full && String(full).trim()) return String(full).trim();
+  for (const key of STAFF_KEYS) {
+    const name = readPersonName(raw[key]);
+    if (name) return name;
+  }
+
+  // Arrays of staff (e.g. staffs: [{ name }, { name }])
+  const arrayKeys = ["staffs", "staffList", "staff_list", "staffMembers"];
+  for (const key of arrayKeys) {
+    const arr = raw[key];
+    if (Array.isArray(arr)) {
+      const names = arr
+        .map((s: any) => readPersonName(s))
+        .filter((n: string | null): n is string => !!n);
+      if (names.length > 0) return names.join(", ");
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Fallback: when the department object itself has no staff name, look at the
+ * tickets. Prefer the ticket currently being served, then any other ticket
+ * that carries a staff field.
+ */
+function staffNameFromList(list: any): string | null {
+  if (!Array.isArray(list)) return null;
+
+  const isServing = (t: any) => {
+    const s = String(t?.status ?? "")
+      .toLowerCase()
+      .trim();
+    return s === "serving" || s === "now-serving" || s === "now_serving";
+  };
+
+  const serving = list.find(isServing);
+  const fromServing = normalizeStaffName(serving);
+  if (fromServing) return fromServing;
+
+  for (const t of list) {
+    const name = normalizeStaffName(t);
+    if (name) return name;
   }
   return null;
 }
@@ -227,6 +317,10 @@ function normalizeDepartment(raw: any): DepartmentQueue {
 
   const waiting = Math.max(listPending, topLevelWaiting);
 
+  // Staff: department-level fields first, then fall back to the raw tickets
+  // (the original objects, since normalizeQueueItem drops staff fields).
+  const staffName = normalizeStaffName(raw) ?? staffNameFromList(rawList);
+
   return {
     department: String(raw?.department ?? raw?.dept ?? ""),
     displayName: String(
@@ -236,7 +330,7 @@ function normalizeDepartment(raw: any): DepartmentQueue {
         raw?.department ??
         "",
     ),
-    staffName: normalizeStaffName(raw),
+    staffName,
     serving,
     waiting,
     waitingList: list,

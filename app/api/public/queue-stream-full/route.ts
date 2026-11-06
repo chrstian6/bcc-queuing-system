@@ -64,6 +64,7 @@ function getEmptyDepartments() {
     {
       department: "dean",
       displayName: "Dean",
+      staffName: null,
       serving: null,
       waiting: 0,
       waitingList: [],
@@ -71,6 +72,7 @@ function getEmptyDepartments() {
     {
       department: "registrar",
       displayName: "Registrar",
+      staffName: null,
       serving: null,
       waiting: 0,
       waitingList: [],
@@ -78,11 +80,52 @@ function getEmptyDepartments() {
     {
       department: "cashier",
       displayName: "Cashier",
+      staffName: null,
       serving: null,
       waiting: 0,
       waitingList: [],
     },
   ];
+}
+
+/**
+ * Looks up the active staff for a department's office so the live monitor
+ * can show who is at the desk. Prefers the regular role (e.g. "dean");
+ * falls back to the head role (e.g. "head_dean") if no regular staff exists.
+ *
+ * Cashier is intentionally not handled here: the live page gets per-window
+ * cashier names from getPublicCashierQueues().
+ */
+async function getDepartmentStaffName(dept: string): Promise<string | null> {
+  try {
+    let roleNames: string[] = [];
+    if (dept === "dean") roleNames = ["dean", "head_dean"];
+    else if (dept === "registrar") roleNames = ["registrar", "head_registrar"];
+    else return null;
+
+    const staff = await Staff.find({
+      roleName: { $in: roleNames },
+      status: "active",
+    } as any)
+      .select("firstName lastName roleName")
+      .lean();
+
+    if (!staff || staff.length === 0) return null;
+
+    const regular = (staff as any[]).filter(
+      (s) => !String(s.roleName || "").startsWith("head_"),
+    );
+    const chosen = regular.length > 0 ? regular : (staff as any[]);
+
+    const names = chosen
+      .map((s) => `${s.firstName || ""} ${s.lastName || ""}`.trim())
+      .filter(Boolean);
+
+    return names.length > 0 ? names.join(", ") : null;
+  } catch (err) {
+    console.error(`Error fetching staff name for ${dept}:`, err);
+    return null;
+  }
 }
 
 async function getQueueData() {
@@ -122,9 +165,12 @@ async function getQueueData() {
             )
             .lean();
 
+          const staffName = await getDepartmentStaffName(dept);
+
           return {
             department: dept,
             displayName: displayNames[dept] || dept,
+            staffName,
             serving: servingTicket ? (servingTicket as any).ticketNumber : null,
             waiting: waitingCount,
             waitingList: JSON.parse(JSON.stringify(waitingList)),
@@ -134,6 +180,7 @@ async function getQueueData() {
           return {
             department: dept,
             displayName: displayNames[dept] || dept,
+            staffName: null,
             serving: null,
             waiting: 0,
             waitingList: [],
